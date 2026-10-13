@@ -34,7 +34,7 @@ the lines and points with their colours.
      Use `net48/groundtrack.gha` instead if you start Rhino in .NET Framework mode (`/netfx`).
      If Windows blocked the download: right-click the file → Properties → Unblock.
    - **Yak package:**
-     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.1.0-rh8_0-win.yak`.
+     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.1.1-rh8_0-win.yak`.
      This picks the right build for your Rhino by itself.
 
    Use one of the two, not both: two copies make Grasshopper report a conflict.

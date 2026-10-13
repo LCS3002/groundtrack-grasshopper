@@ -168,15 +168,33 @@ namespace Groundtrack.Components
             });
         }
 
+        /// <summary>Open the timeline window. A closed window cannot be shown again (Windows), so
+        /// closing forgets it and the next call builds a new one - also mid-animation.</summary>
         public void ShowWindow()
         {
-            if (_window == null || _window.IsDisposed)
+            if (_window != null && (_window.IsDisposed || _window.IsClosed)) _window = null;
+            if (_window != null)
             {
-                _window = new TimelineWindow(this);
+                try
+                {
+                    _window.Show();
+                    _window.BringToFront();
+                    return;
+                }
+                catch (Exception)
+                {
+                    _window = null;          // could not be shown again: make a new one
+                }
             }
-            _window.Show();
-            _window.BringToFront();
+            var w = new TimelineWindow(this);
+            w.Closed += (s, e) => { if (ReferenceEquals(_window, w)) _window = null; };
+            _window = w;
+            w.Show();
+            w.BringToFront();
         }
+
+        /// <summary>The window if one is open (for tests).</summary>
+        public TimelineWindow Window => _window;
 
         // ---- UI hooks ------------------------------------------------------------------------
         public override void CreateAttributes() => m_attributes = new TimelineAttributes(this);

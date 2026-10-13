@@ -58,16 +58,19 @@ namespace Groundtrack.UI
             };
             Content = new StackLayout { Spacing = 6, Items = { row1, row2, _status } };
             _c.Changed += Sync;
-            Closed += (o, e) => _c.Changed -= Sync;
+            Closed += (o, e) => { IsClosed = true; _c.Changed -= Sync; };
             try { Owner = Rhino.UI.RhinoEtoApp.MainWindow; } catch { }
             Sync();
         }
+
+        /// <summary>Closed by the user (it cannot be shown again; the component makes a new one).</summary>
+        public bool IsClosed { get; private set; }
 
         void Sync()
         {
             Application.Instance.AsyncInvoke(() =>
             {
-                if (IsDisposed) return;
+                if (IsDisposed || IsClosed) return;
                 _sync = true;
                 double span = Math.Max(_c.Out - _c.In, 1e-9);
                 _slider.Value = (int)Math.Round((_c.Current - _c.In) / span * 1000);

@@ -13,7 +13,7 @@ namespace Groundtrack
         public override Guid Id => new Guid("6c1f4c2e-2d7a-4a59-9a43-6a0b2f1d3e21");
         public override string AuthorName => "groundtrack";
         public override string AuthorContact => "https://github.com/LCS3002/groundtrack-grasshopper";
-        public override string Version => "0.1.0";
+        public override string Version => "0.1.1";
     }
 
     /// <summary>The tab and its panels.</summary>
