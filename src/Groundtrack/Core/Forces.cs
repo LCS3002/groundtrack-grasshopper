@@ -161,14 +161,14 @@ namespace Groundtrack.Core
         public FieldData Field;
         public double Strength = 1, HeightPull;
 
-        public override string Key => $"field {Field?.Source}|{Field?.Group}|{Field?.Place.Key}|{Strength},{HeightPull},{string.Join(",", Layers)}";
+        public override string Key => $"field {Field?.Source}|{Field?.Group}|{Field?.Place.Key}|{Field?.Warp?.Signature}|{Strength},{HeightPull},{string.Join(",", Layers)}";
 
         public override void Apply(ParticleSystem s, ParticleSystem.Particle p, ref double ax, ref double ay, ref double az)
         {
             if (!Acts(p) || Field == null || !Field.SampleWorld(p.X, p.Y, p.Z, out var f)) return;
             double w = Math.Min(1, f.Confidence * 2);
             // towards that field's velocity along its ground (its normal: up for flat fields)
-            var (nx, ny, nz) = Field.Place.Normal;
+            double nx = f.Nx, ny = f.Ny, nz = f.Nz;
             double dx = f.Vx * s.SpeedScale - p.Vx, dy = f.Vy * s.SpeedScale - p.Vy, dz = f.Vz * s.SpeedScale - p.Vz;
             double dn = dx * nx + dy * ny + dz * nz;
             ax += Strength * w * (dx - dn * nx);

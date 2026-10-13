@@ -40,6 +40,11 @@ namespace Groundtrack.Components
             if (!DA.GetDataList(0, goos)) return;
             var fields = goos.Where(g => g?.Value != null).Select(g => g.Value).ToList();
             if (fields.Count == 0) return;
+            if (fields.Any(f => f.Warped))
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Bent fields (morphs, Warp Field, Loft, Bridge) are combined as they were before bending: bend after combining");
+                fields = fields.Select(f => f.Warped ? f.Unwarped() : f).ToList();
+            }
             double feather = 4, smooth = 1.5;
             bool fill = true;
             double maxSlope = 1;

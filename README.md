@@ -1,8 +1,8 @@
 # groundtrack for Grasshopper
 
 Movement data in Grasshopper (Rhino 8): flow fields, streamlines, a particle system like Houdini's
-POP network (with forces, layers and collisions), merging and blending, crossings, replay of the
-real tracks, and a timeline with recording.
+POP network (with forces, layers and collisions), merging and blending, fields bent and lofted into
+3D landscapes, crossings and cuts, replay of the real tracks, and a timeline with recording.
 
 **Quick guide:** [docs/GUIDE.md](docs/GUIDE.md). It covers every node, the Houdini POP
 equivalents, and recipes.
@@ -13,6 +13,8 @@ plain Grasshopper geometry: curves, points, vectors and meshes. So Move, Rotate,
 Tween, Bake and everything else work on it.
 
 ![components](docs/components.png)
+
+![lexicon](docs/lexicon.png)
 
 ## Components (tab "groundtrack")
 
@@ -26,6 +28,11 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/merge.png) | **Merge Fields** | Several fields into one (sites, clips, groups). No seams: **Feather** (fade in at the edges), **Smooth**, **Fill** gaps, and **Max slope**, which turns cliffs between layers at different heights into ramps. |
 | ![](src/Groundtrack/Icons/blend.png) | **Blend Fields** | Interpolate fields, also of different sites. A **T** slider runs from the first field to the last; Weights are optional. The same seam controls as Merge. |
 | ![](src/Groundtrack/Icons/smooth.png) | **Smooth Field** | Relax a field: Radius, Fill gaps, Max slope. |
+| ![](src/Groundtrack/Icons/warpfield.png) | **Warp Field** | Bend a field into 3D: twist, bend, swirl, wave, taper or bulge. The flow runs along the new shape. Grasshopper's own Bend Deform / Twist / Taper / Maelstrom / Box Morph / Surface Morph work on fields too. |
+| ![](src/Groundtrack/Icons/landscape.png) | **Landscape** | Shape a field's ground: Soften rolls steps into hills, Relief raises it where it is busiest or fastest, Ground drapes it over a surface or mesh you model. |
+| ![](src/Groundtrack/Icons/loft.png) | **Loft Fields** | Stacked layers joined at their edges by rounded folds, the flow blending from one layer into the next: one continuous landscape (All → Particles / Streamlines). |
+| ![](src/Groundtrack/Icons/bridge.png) | **Bridge** | Swooping ribbons between fields: automatic (where one flow leaves and another comes in) or along curves you draw. |
+| ![](src/Groundtrack/Icons/surface.png) | **Field Surface** | A field's ground as a mesh coloured by speed, and its outlines as smooth curves (also bent fields, folds, bridges). |
 | ![](src/Groundtrack/Icons/force.png) | **Force** | POP Force: a constant push plus turbulence. |
 | ![](src/Groundtrack/Icons/axis.png) | **Axis Force** | POP Axis Force: orbit around an axis, suck towards it, lift along it. |
 | ![](src/Groundtrack/Icons/attract.png) | **Attract** | POP Attract: towards points, or away from them with a negative Strength. |
@@ -33,7 +40,9 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/fieldforce.png) | **Field Force** | A field's vectors as a force on any layer (wind / POP Advect force mode). Height pull drags particles to that field's ground. |
 | ![](src/Groundtrack/Icons/interact.png) | **Interact** | POP Interact / flocking: separation, cohesion and alignment. With Between set to `others`, layers pull on each other and intertwine. |
 | ![](src/Groundtrack/Icons/obstacle.png) | **Obstacle** | POP Collision: footprints (closed curves, up to a height) or massing (breps / meshes); particles go around or bounce off. |
+| ![](src/Groundtrack/Icons/applyforces.png) | **Apply Forces** | Bend the field's flow itself with forces (swirls, pulls, detours); Keep speed changes only the direction. |
 | ![](src/Groundtrack/Icons/crossings.png) | **Crossings** | Where two sets of curves cross (e.g. people vs vehicles, or two sites laid over each other), at what angle, plus a heat map. |
+| ![](src/Groundtrack/Icons/intersect.png) | **Intersect Fields** | Where layers cut through each other (like intersecting planes): the cut lines and the angle between the two flows along them. |
 | ![](src/Groundtrack/Icons/timeline.png) | **Timeline** | One clock (seconds) for Particles, Replay and time-sliced Fields. Double-click it to open the timeline window: play / pause, scrub, speed, loop, in / out, and **Record**, which saves the Rhino viewport as a PNG sequence. |
 | ![](src/Groundtrack/Icons/replay.png) | **Replay** | The real tracks at time T: everyone's position and trail, coloured by speed. It follows its field when you move or tilt it. |
 | ![](src/Groundtrack/Icons/gradient.png) | **Gradient** | Recolour: presets (groundtrack, inferno, viridis, magma, greys, white-pink, blue-red, mono) or your own colours. Plug into Streamlines / Particles / Replay / Crossings. |
@@ -53,7 +62,7 @@ the lines and points with their colours.
      Use `net48/groundtrack.gha` instead if you start Rhino in .NET Framework mode (`/netfx`).
      If Windows blocked the download: right-click the file → Properties → Unblock.
    - **Yak package:**
-     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.3.0-rh8_0-win.yak`.
+     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.4.0-rh8_0-win.yak`.
      This picks the right build for your Rhino by itself.
 
    Use one of the two, not both: two copies make Grasshopper report a conflict.
@@ -85,8 +94,11 @@ Then try:
   that climbs the ramps.
 - **A folded surface:** copies of a field hinged edge to edge with Move + Rotate 3D (floor, slope,
   wall), all into Particles. With Join, particles run from one onto the next.
+- **A landscape:** stack fields (Transform Field, Move Z), bend some (Warp Field, or Grasshopper's
+  morphs), join them at their edges (Loft Fields) or with ribbons (Bridge), then All → Particles /
+  Streamlines / Field Surface.
 
-`examples/groundtrack_example.gh` shows all of this, in seven groups side by side:
+`examples/groundtrack_example.gh` shows all of this, in nine groups side by side:
 1. Streamlines.
 2. Particles and Replay on a Timeline.
 3. Blend and Crossings.
@@ -96,9 +108,13 @@ Then try:
    merged into one continuous field.
 7. A folded surface: a motorway clip three times, hinged as floor, 30° slope and wall; the vehicles
    drive from one onto the next.
+8. A lofted landscape: three plaza layers stacked 8 m apart, the top one waving, joined at their
+   edges by rounded folds.
+9. Bend, bridge, cut: plaza 3 bent up 60° and joined to the plaza by automatic ribbons; a copy
+   tilted 35° cutting the plaza.
 
-Groups 1–6 use Reuters Plaza; group 7 uses the Blackwall motorway (its vehicles drive straight
-through, which shows the hand-over clearly).
+Group 7 uses the Blackwall motorway (its vehicles drive straight through, which shows the hand-over
+clearly); the others use Reuters Plaza.
 
 ## Data and coordinates
 
@@ -143,7 +159,7 @@ passed all of them, on both .NET 8 and .NET Framework 4.8:
 - **Recording:** in visible Rhino, the timeline window opens, and recording 0–1 s at 30 fps writes
   31 PNG frames.
 
-Forces, layers, seams, tilting, ramps and folds (0.2–0.3), on the same data:
+Forces, layers, seams, tilting, ramps, folds and 3D shaping (0.2–0.4), on the same data:
 
 | Check | Result |
 |---|---|
@@ -162,6 +178,13 @@ Forces, layers, seams, tilting, ramps and folds (0.2–0.3), on the same data:
 | Two plaza levels 5 m apart joined by two ramps: streamline segments steeper than 2:1 / people who walk between the levels in 90 s | 0 / 431 up, 365 down |
 | Folded motorway (floor, 30° slope, wall; Join 8 m): vehicles in 90 s from the floor onto the slope / on up the wall | 11,730 / 2,765 (none with Join 0) |
 | Definitions saved with 0.1.1 and 0.2.0 | open without messages, wires kept |
+| Grasshopper's Twist / Maelstrom / Bend Deform and Warp Field's six modes on the plaza: streamlines and particles off the bent surface / particles outside / speed vs the field | 0.000 m / 0 / ≤ 0.15 % |
+| Landscape draped over a sloping surface: largest height error | 0.000 m |
+| Loft Fields, three plaza layers 8 m apart: particles from a layer onto a fold / on to another layer, in 90 s | 22,997 / 1,352 |
+| Bridge, two plaza levels: automatic ribbons / particles onto a bridge / across to the other level, in 150 s | 4 / 1,148 / 224 |
+| Apply Forces (Axis Force): angular momentum of the flow / largest speed change | −44,133 → 10,562 / 1e-7 m/s |
+| Intersect Fields, the plaza and a copy tilted 35°: distance of the cut from the hinge line | 0.00 m |
+| ~3300 particles on a warped field | 7–9 ms per step |
 
 ## Build
 

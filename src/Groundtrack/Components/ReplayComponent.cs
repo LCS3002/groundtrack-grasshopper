@@ -81,8 +81,8 @@ namespace Groundtrack.Components
             var ids = new List<int>();
             foreach (var s in tr.At(t, gi))
             {
-                var (x, y, z) = pl.Apply(s.X, s.Y, s.Z);
-                var (vx, vy, vz) = pl.ApplyVector3(s.Vx, s.Vy);
+                var (x, y, z) = f.LocalToWorld(s.X, s.Y, s.Z);
+                var (vx, vy, vz) = f.LocalVectorToWorld(s.X, s.Y, s.Vx, s.Vy);
                 var c = Preview.SpeedColour(s.Speed, s.Top, gradient);
                 pts.Add(new Point3d(x, y, z));
                 vel.Add(new Vector3d(vx, vy, vz));
@@ -95,7 +95,7 @@ namespace Groundtrack.Components
                     var path = tr.Trail(s.Track, t - tail, t);
                     if (path.Count >= 2)
                     {
-                        var tp = path.Select(q => { var (a, b, cz) = pl.Apply(q.X, q.Y, q.Z); return new Point3d(a, b, cz); }).ToList();
+                        var tp = path.Select(q => { var (a, b, cz) = f.LocalToWorld(q.X, q.Y, q.Z); return new Point3d(a, b, cz); }).ToList();
                         trails.Add(new PolylineCurve(tp));
                         Buckets.AddPolyline(tp, path.Select(q => q.Speed).ToList(), s.Top, gradient);
                         BakeCurves.Add(trails[trails.Count - 1]);

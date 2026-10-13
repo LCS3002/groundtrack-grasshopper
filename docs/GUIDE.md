@@ -1,11 +1,11 @@
-# groundtrack for Grasshopper — quick guide (0.3)
+# groundtrack for Grasshopper — quick guide (0.4)
 
 ## Install / update
 - **Installed:** `%APPDATA%\Grasshopper\Libraries\groundtrack\groundtrack.gha`.
 - **To update:** close Rhino, then replace that file.
 - **Keep one copy only.** A second copy (for example the .yak package as well) makes Grasshopper report a conflict.
 - **"Package not found" popup:** the plugin isn't loaded in that Rhino. Ignore the package server and install as above.
-- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 7 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up, levels joined by ramps, a folded surface.
+- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 9 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up, levels joined by ramps, a folded surface, a lofted landscape, bend + bridge + cut.
 
 ## Data
 - **Field** finds `GROUNDTRACK RESULTS` by itself. Its **Site / Clip / Group** dropdowns appear when you place it.
@@ -25,6 +25,11 @@
 | Flow | **Merge Fields** | Several fields → one: sites, clips and groups together. |
 | Flow | **Blend Fields** | Morph between fields with the T slider (0 = first field, 1 = last). |
 | Flow | **Smooth Field** | Relax a field: Radius, Fill gaps, Max slope. |
+| Shape | **Warp Field** | Bend a field into 3D: twist / bend / swirl / wave / taper / bulge (Amount, Size, Axis, Up; empty = a good start). |
+| Shape | **Landscape** | Soften (rolls steps into hills), Relief (higher where busy / fast), Ground (drape onto your surface / mesh, + Offset). |
+| Shape | **Loft Fields** | Stacked layers joined at their edges by rounded folds; Start / End = which part of the outline; Swing = how far the folds bulge. |
+| Shape | **Bridge** | Ribbons between fields: automatic (Count per pair, Reach) or along your Curves; Width, Swing. |
+| Shape | **Field Surface** | The ground as a coloured mesh + smooth outline curves. |
 | Forces | **Force** | Constant push plus turbulence (Noise, Scale, Speed). |
 | Forces | **Axis Force** | Swirl around an axis (Orbit), suck in (Suction), lift (Lift). |
 | Forces | **Attract** | Points pull in; negative Strength pushes away. |
@@ -32,7 +37,9 @@
 | Forces | **Field Force** | A field's vectors as a force on any layer; Height pull drags particles to its level. |
 | Forces | **Interact** | Separation, cohesion and alignment between particles. `others` = layers pull on each other. |
 | Forces | **Obstacle** | Footprints (closed curves) or massing (breps/meshes): particles go around. |
+| Forces | **Apply Forces** | Bends the field's flow itself with forces (Seconds = how far; Keep speed). |
 | Analyse | **Crossings** | Where two sets of curves cross, at what angle, plus a heat map. |
+| Analyse | **Intersect Fields** | Where layers cut through each other: cut lines + flow angle. |
 | Time | **Timeline** | The clock. **Double-click** for the window: play, scrub, speed, loop, in/out, **Record** (PNGs). |
 | Time | **Replay** | The real people/vehicles at time T, with trails. |
 | Colour | **Gradient** | Recolour with presets or your own colours. Plug into the Gradient input of Streamlines/Particles/Replay/Crossings. |
@@ -90,6 +97,14 @@
     - All copies into Particles **Fields**; set **Join** to the gaps at the edges (e.g. 8 m).
     - Ragged or holey fields: **Smooth Field** (Radius 4, Fill) first.
     - Lay the copies along the flow's start-to-end direction, so the flow leaving one arrives where the next one's flow starts.
+18. **3D landscape (stack, bend, join):**
+    - Stack: Fields → Transform Field (Move Z 6–10 m each).
+    - Bend some: **Warp Field** (wave / bulge / twist / bend), or Grasshopper's Bend Deform, Twist, Taper, Maelstrom, Box Morph, Surface Morph.
+    - Shape the ground: **Landscape** (Soften 6–15 m, Relief 5–10 m, or Ground = your own surface).
+    - Join them: **Loft Fields** (rounded folds at the edges) and/or **Bridge** (ribbons).
+    - Loft's / Bridge's **All** → Particles (Join 2) / Streamlines / Field Surface. Bake → render.
+19. **Bend the flow, not the shape:** forces → **Apply Forces** → Streamlines (swirls, detours round massing).
+20. **Where layers cut:** tilted or warped layers → **Intersect Fields** → cut lines (plane intersections), flow angle along them.
 
 ## Particles settings
 | Input | Meaning | Try |
@@ -112,4 +127,5 @@
 - **Merge/Blend with tilted fields:** the result lies in the plane of the strongest field; the others are projected onto it.
 - **Scrubbing backwards** re-runs the simulation from 0. That's expected: it gives the same result every time.
 - **Slow?** Lower Rate, or Interact's Radius.
+- **Bent fields and Merge / Blend:** these combine fields as they were before bending: merge first, then bend.
 - **Join and stacked layers:** Join only hands particles to a field whose ground is within Join of them, and whose flow continues their way. Layers stacked further apart than Join stay separate.

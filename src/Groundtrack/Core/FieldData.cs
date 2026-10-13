@@ -7,8 +7,9 @@ namespace Groundtrack.Core
     /// supported (confidence 0..1), the top of its group's speed scale (smax, for colours) and
     /// the ground height. Grid coordinates are metres around the site's origin (Easting -> +X,
     /// Northing -> +Y, height above the site's ground level -> +Z). Place moves / turns / scales /
-    /// tilts the whole field (Grasshopper Transform nodes); velocities turn and scale with it.</summary>
-    public sealed class FieldData
+    /// tilts the whole field (Grasshopper Transform nodes); velocities turn and scale with it. A
+    /// bent field (morphs, Warp Field, bridges) carries a Sheet: its cells' 3D positions.</summary>
+    public sealed partial class FieldData
     {
         public string Site = "", Clip = "", Group = "", Source = "", TracksPath = "";
         public double OriginE, OriginN, Z0;
@@ -69,6 +70,7 @@ namespace Groundtrack.Core
         /// <summary>World position of a cell centre.</summary>
         public (double X, double Y, double Z) CellWorld(int k)
         {
+            if (Warp != null) return (Warp.Px[k], Warp.Py[k], Warp.Pz[k]);
             int i = k % Nx, j = k / Nx;
             return Place.Apply(X0 + i * Cell, Y0 + j * Cell, Z[k]);
         }
@@ -83,18 +85,26 @@ namespace Groundtrack.Core
         }
 
         /// <summary>World velocity of a cell (3D: tilted fields flow along their plane).</summary>
-        public (double X, double Y, double Z) CellVelocity(int k) => Place.ApplyVector3(Vx[k], Vy[k]);
+        public (double X, double Y, double Z) CellVelocity(int k)
+        {
+            if (Warp == null) return Place.ApplyVector3(Vx[k], Vy[k]);
+            var w = Warp;
+            return (w.Ux[k] * Vx[k] + w.Vx[k] * Vy[k], w.Uy[k] * Vx[k] + w.Vy[k] * Vy[k], w.Uz[k] * Vx[k] + w.Vz[k] * Vy[k]);
+        }
 
         /// <summary>Sample at a world position: the flow there and the ground under / over it,
-        /// across the field's plane (straight down for flat fields). Vx / Vy / Vz and Gx / Gy / Z
-        /// (the ground point) are in world.</summary>
+        /// across the field's plane (straight down for flat fields; the closest point of a bent
+        /// field's sheet). Vx / Vy / Vz, Gx / Gy / Z (the ground point) and N (its up) are in
+        /// world.</summary>
         public bool SampleWorld(double wx, double wy, double wz, out Sample s)
         {
+            if (Warp != null) return SampleSheet(wx, wy, wz, out s);
             if (!Place.Tilted) return Sample(wx, wy, out s);
             var (px, py, _) = Place.ToPlane(wx, wy, wz);
             if (!Sample(px, py, out s)) return false;
             (s.Vx, s.Vy, s.Vz) = Place.ToWorld(s.Vx, s.Vy, 0);
             (s.Gx, s.Gy, s.Z) = Place.ToWorld(px, py, s.Z);
+            (s.Nx, s.Ny, s.Nz) = Place.Normal;
             return true;
         }
 
@@ -105,7 +115,19 @@ namespace Groundtrack.Core
         {
             s = default;
             var (lx, ly) = Place.Inverse(wx, wy);
-            if (double.IsNaN(lx)) return false;
+            if (double.IsNaN(lx) || !SampleLocal(lx, ly, out s)) return false;
+            var (wvx, wvy) = Place.ApplyVector(s.Vx, s.Vy);
+            s.Vx = wvx; s.Vy = wvy;
+            s.Z = Place.Sz * s.Z + Place.Tz;
+            s.Gx = wx; s.Gy = wy;
+            (s.Nx, s.Ny, s.Nz) = Place.Normal;
+            return true;
+        }
+
+        /// <summary>Bilinear sample at a local (grid / site) point: local velocity and height.</summary>
+        public bool SampleLocal(double lx, double ly, out Sample s)
+        {
+            s = default;
             double fx = (lx - X0) / Cell, fy = (ly - Y0) / Cell;
             int i0 = (int)Math.Floor(fx), j0 = (int)Math.Floor(fy);
             double tx = fx - i0, ty = fy - j0;
@@ -129,12 +151,10 @@ namespace Groundtrack.Core
                 }
             }
             if (wsum < 0.25) return false;
-            var (wvx, wvy) = Place.ApplyVector(vx / wsum, vy / wsum);
-            double wz = Place.Sz * z / wsum + Place.Tz;
             s = new Sample
             {
-                Vx = wvx, Vy = wvy, Z = wz, Gx = wx, Gy = wy, Confidence = conf / wsum, Density = dens / wsum,
-                Smax = smax / wsum, Coverage = wsum, MeanSpeed = msp / wsum * Scale,
+                Vx = vx / wsum, Vy = vy / wsum, Z = z / wsum, Gx = lx, Gy = ly, Nz = 1, Confidence = conf / wsum,
+                Density = dens / wsum, Smax = smax / wsum, Coverage = wsum, MeanSpeed = msp / wsum * Scale,
             };
             return true;
         }
@@ -144,6 +164,16 @@ namespace Groundtrack.Core
         {
             double a = double.MaxValue, b = double.MaxValue, e = double.MaxValue;
             double c = double.MinValue, d = double.MinValue, g = double.MinValue;
+            if (Warp != null)
+            {
+                for (int k = 0; k < Has.Length; k++)
+                {
+                    if (!Has[k]) continue;
+                    a = Math.Min(a, Warp.Px[k]); b = Math.Min(b, Warp.Py[k]); e = Math.Min(e, Warp.Pz[k]);
+                    c = Math.Max(c, Warp.Px[k]); d = Math.Max(d, Warp.Py[k]); g = Math.Max(g, Warp.Pz[k]);
+                }
+                return (a, b, e, c, d, g);
+            }
             double h = Cell / 2;
             for (int k = 0; k < Has.Length; k++)
             {
@@ -192,6 +222,7 @@ namespace Groundtrack.Core
     {
         public double Vx, Vy, Vz, Z, Confidence, Density, Smax, Coverage;
         public double Gx, Gy;      // the ground point (with Z)
+        public double Nx, Ny, Nz;  // the ground's up there (world)
         public double MeanSpeed;   // mean of the individual speeds (the csv's speed column)
         public double Speed => Math.Sqrt(Vx * Vx + Vy * Vy + Vz * Vz);
     }

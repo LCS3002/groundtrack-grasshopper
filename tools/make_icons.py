@@ -25,8 +25,13 @@ def canvas():
     return im, ImageDraw.Draw(im)
 
 
+LARGE = Path(__file__).resolve().parents[1] / "docs" / "icons"     # 96 px versions (docs, lexicon)
+
+
 def save(im, name):
     im.resize((24, 24), Image.LANCZOS).save(OUT / f"{name}.png")
+    LARGE.mkdir(parents=True, exist_ok=True)
+    im.save(LARGE / f"{name}.png")
 
 
 def arrow(d, x0, y0, x1, y1, c, w):
@@ -167,4 +172,66 @@ d.line([(2 * S, 8 * S), (6 * S, 3 * S), (10 * S, 9 * S), (14 * S, 3 * S), (18 * 
 pts = [(x * S, (17 + 3 * math.sin(x / 3.2)) * S) for x in [2 + 0.5 * n for n in range(41)]]
 d.line(pts, fill=ramp(0.15), width=2 * S, joint="curve")
 save(im, "smooth")
+print("icons:", len(list(OUT.iterdir())))
+
+# ---- 3D shaping (0.4)
+im, d = canvas()                                   # warp field: a band twisting along
+top = [(x * S, (7 + 4 * math.sin(x / 3.6)) * S) for x in [2 + 0.5 * n for n in range(41)]]
+bot = [(x * S, (17 - 4 * math.sin(x / 3.6)) * S) for x in [2 + 0.5 * n for n in range(41)]]
+for k in range(0, 41, 8):
+    d.line([top[k], bot[k]], fill=ramp(k / 40)[:3] + (200,), width=S)
+d.line(top, fill=INK, width=S + 1, joint="curve")
+d.line(bot, fill=INK, width=S + 1, joint="curve")
+save(im, "warpfield")
+
+im, d = canvas()                                   # landscape: rolling hills, flow over them
+hill = [(x * S, (16 - 5 * math.exp(-((x - 8) / 4) ** 2) - 3 * math.exp(-((x - 17) / 3) ** 2)) * S) for x in [1 + 0.5 * n for n in range(45)]]
+d.polygon(hill + [(23 * S, 22 * S), (1 * S, 22 * S)], fill=(225, 225, 228, 255))
+d.line(hill, fill=INK, width=S + 1, joint="curve")
+for x in (4, 11, 18):
+    y = 16 - 5 * math.exp(-((x - 8) / 4) ** 2) - 3 * math.exp(-((x - 17) / 3) ** 2) - 3
+    arrow(d, x - 2, y, x + 2.5, y - 0.6, ramp(0.25 + x / 40), 1)
+save(im, "landscape")
+
+im, d = canvas()                                   # loft: stacked layers rolling into each other at the edges
+for k, y in enumerate((5, 12, 19)):
+    d.line([(4 * S, y * S), (17 * S, y * S)], fill=ramp(0.15 + 0.35 * k), width=2 * S)
+d.arc([13 * S, 5 * S, 21 * S, 12 * S], 270, 90, fill=ramp(0.32), width=2 * S)
+d.arc([0 * S, 12 * S, 8 * S, 19 * S], 90, 270, fill=ramp(0.68), width=2 * S)
+save(im, "loft")
+
+im, d = canvas()                                   # bridge: two layers joined by a swooping ribbon
+d.line([(1 * S, 19 * S), (8 * S, 19 * S)], fill=INK, width=2 * S)
+d.line([(16 * S, 5 * S), (23 * S, 5 * S)], fill=INK, width=2 * S)
+for off, c in ((-1.6, ramp(0.2)), (1.6, ramp(0.75))):
+    pts = []
+    for n in range(41):
+        t = n / 40
+        x = 8 + 8 * t
+        y = 19 - 14 * (3 * t * t - 2 * t * t * t) + off
+        pts.append((x * S, y * S))
+    d.line(pts, fill=c, width=S + 1, joint="curve")
+save(im, "bridge")
+
+im, d = canvas()                                   # apply forces: flow lines bent round a force point
+d.ellipse([10 * S, 10 * S, 14 * S, 14 * S], fill=(255, 60, 190, 255))
+for k, r in enumerate((5, 8.5)):
+    pts = [((12 + r * math.cos(a)) * S, (12 + r * math.sin(a)) * S) for a in [math.pi * (0.15 + 0.03 * n) for n in range(40)]]
+    d.line(pts, fill=ramp(0.2 + 0.4 * k), width=2 * S, joint="curve")
+arrow(d, 12 + 5 * math.cos(math.pi * 1.32), 12 + 5 * math.sin(math.pi * 1.32), 12 + 5 * math.cos(math.pi * 1.4), 12 + 5 * math.sin(math.pi * 1.4), ramp(0.2), 1)
+save(im, "applyforces")
+
+im, d = canvas()                                   # intersect: two planes cutting, the cut line
+d.polygon([(2 * S, 15 * S), (12 * S, 9 * S), (22 * S, 15 * S), (12 * S, 21 * S)], fill=(32, 199, 223, 110), outline=INK)
+d.polygon([(6 * S, 3 * S), (18 * S, 3 * S), (18 * S, 19 * S), (6 * S, 19 * S)], fill=(245, 105, 24, 90), outline=INK)
+d.line([(6 * S, 15 * S), (18 * S, 15 * S)], fill=(255, 60, 190, 255), width=2 * S)
+save(im, "intersect")
+
+im, d = canvas()                                   # surface: a coloured mesh in perspective
+for j in range(4):
+    for i in range(4):
+        def q(u, v):
+            return ((3 + 4.5 * u + 1.6 * v) * S, (19 - 3.5 * v - 0.8 * u + 2.0 * math.sin(u * 0.9)) * S)
+        d.polygon([q(i, j), q(i + 1, j), q(i + 1, j + 1), q(i, j + 1)], fill=ramp((i + j) / 6), outline=INK)
+save(im, "surface")
 print("icons:", len(list(OUT.iterdir())))

@@ -156,7 +156,7 @@ namespace Groundtrack.Core
             int i = k % f.Nx, j = k / f.Nx;
             double lx = f.X0 + (i + _rnd.NextDouble() - 0.5) * f.Cell;
             double ly = f.Y0 + (j + _rnd.NextDouble() - 0.5) * f.Cell;
-            var (x, y, z) = f.Place.Apply(lx, ly, f.Z[k]);
+            var (x, y, z) = f.LocalToWorld(lx, ly, f.Z[k]);
             double life = Life * (0.7 + 0.6 * _rnd.NextDouble());
             if (!f.SampleWorld(x, y, z, out var s)) return;
             var p = new Particle
@@ -173,12 +173,22 @@ namespace Groundtrack.Core
         {
             if (p.Bridge > 0) return Coast(p);
             var f = Fields[p.Layer];
-            // the layer's frame: along its ground (U, V) and across it (N; up for flat layers)
-            var (nx, ny, nz) = f.Place.Normal;
-            var (ux, uy, uz) = f.Place.AxisU;
-            var (wx, wy, wz) = f.Place.AxisV;
+            // the layer's frame here: along its ground (U, V) and across it (N; up for flat layers)
             bool inside = f.SampleWorld(p.X, p.Y, p.Z, out var a);
             if (!inside && !KeepOutside) return false;
+            var (nx, ny, nz) = inside ? (a.Nx, a.Ny, a.Nz) : f.Place.Normal;
+            var (ux, uy, uz) = f.Place.AxisU;
+            var (wx, wy, wz) = f.Place.AxisV;
+            if (f.Warped)
+            {
+                // along the bent ground: world X (or Y) laid onto it, and across
+                double d = nx;
+                (ux, uy, uz) = (1 - d * nx, -d * ny, -d * nz);
+                double l = Math.Sqrt(ux * ux + uy * uy + uz * uz);
+                if (l < 0.1) { d = ny; (ux, uy, uz) = (-d * nx, 1 - d * ny, -d * nz); l = Math.Sqrt(ux * ux + uy * uy + uz * uz); }
+                ux /= l; uy /= l; uz /= l;
+                (wx, wy, wz) = (ny * uz - nz * uy, nz * ux - nx * uz, nx * uy - ny * ux);
+            }
             double fx = inside ? a.Vx * SpeedScale : 0, fy = inside ? a.Vy * SpeedScale : 0, fz = inside ? a.Vz * SpeedScale : 0;
 
             double ax = 0, ay = 0, az = 0;
@@ -248,6 +258,7 @@ namespace Groundtrack.Core
             if (!now && !KeepOutside) return false;
 
             // height above the layer's ground: Hold 1 = on it, below 1 = a spring, 0 = free
+            if (now && f.Warped) (nx, ny, nz) = (e.Nx, e.Ny, e.Nz);
             double h = now ? (p.X - e.Gx) * nx + (p.Y - e.Gy) * ny + (p.Z - e.Z) * nz : 0;
             if (Hold >= 0.999 && an == 0)
             {
@@ -289,7 +300,7 @@ namespace Groundtrack.Core
         void HandOver(Particle p, int to, Sample e)
         {
             p.Layer = to; p.Joined++; p.Bridge = 0;
-            var (nx, ny, nz) = Fields[to].Place.Normal;
+            double nx = e.Nx, ny = e.Ny, nz = e.Nz;
             double un = p.Ux * nx + p.Uy * ny + p.Uz * nz;
             p.Ux -= un * nx; p.Uy -= un * ny; p.Uz -= un * nz;
             if (Response <= 0)
@@ -335,8 +346,7 @@ namespace Groundtrack.Core
                 if (l == layer) continue;
                 var g = Fields[l];
                 if (!g.SampleWorld(x, y, z, out var s) || s.Speed < 1e-9) continue;
-                var (nx, ny, nz) = g.Place.Normal;
-                double h = Math.Abs((x - s.Gx) * nx + (y - s.Gy) * ny + (z - s.Z) * nz);
+                double h = Math.Abs((x - s.Gx) * s.Nx + (y - s.Gy) * s.Ny + (z - s.Z) * s.Nz);
                 if (h >= bestH || s.Vx * vx + s.Vy * vy + s.Vz * vz <= 0) continue;
                 // a cell along its flow is still in it
                 double step = Math.Max(g.WorldCell, s.Speed * SpeedScale * Dt) / s.Speed;

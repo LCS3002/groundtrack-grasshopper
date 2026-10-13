@@ -96,7 +96,7 @@ namespace Groundtrack.Components
             // the same fields in a new time slice keep their particles; others restart
             string key = string.Join(";", fields.Select(f =>
             {
-                string k = $"{f.Source}|{f.Clip}|{f.Group}|{f.Place.Key}";
+                string k = $"{f.Source}|{f.Clip}|{f.Group}|{f.Place.Key}|{f.Warp?.Signature}";
                 return double.IsNaN(f.TimeStart) ? k + $"|{f.Valid}" : k;
             }));
             if (_sys == null) _sys = new ParticleSystem();

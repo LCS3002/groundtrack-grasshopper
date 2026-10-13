@@ -9,7 +9,8 @@ using Rhino.Geometry;
 namespace Groundtrack
 {
     /// <summary>A movement field in Grasshopper. Transform nodes (Move, Rotate, Scale, Orient)
-    /// place it; its velocities turn and scale with it.</summary>
+    /// place it; morph nodes (Bend, Twist, Taper, Box Morph, Surface Morph ...) bend it into 3D.
+    /// Its velocities turn, scale and bend with it.</summary>
     public class FieldGoo : GH_GeometricGoo<FieldData>, IGH_PreviewData
     {
         public FieldGoo() { }
@@ -50,10 +51,20 @@ namespace Groundtrack
             var m = new double[3, 4];
             for (int i = 0; i < 3; i++) for (int j = 0; j < 4; j++) m[i, j] = x[i, j];
             f.Place = f.Place.Then(m);
+            if (f.Warp != null) f.Warp = f.Warp.Transformed(m);
             return new FieldGoo(f);
         }
 
-        public override IGH_GeometricGoo Morph(SpaceMorph xmorph) => null;
+        /// <summary>Bent by a space morph: the field becomes a curved sheet, its flow along it.</summary>
+        public override IGH_GeometricGoo Morph(SpaceMorph xmorph)
+        {
+            if (Value == null || xmorph == null) return null;
+            return new FieldGoo(Value.Morphed((x, y, z) =>
+            {
+                var q = xmorph.MorphPoint(new Point3d(x, y, z));
+                return (q.X, q.Y, q.Z);
+            }));
+        }
 
         public override bool CastTo<Q>(ref Q target)
         {
@@ -110,7 +121,7 @@ namespace Groundtrack
                     buckets.Add(new Line(a, b), c);
                     // arrow head, in the field's plane
                     var d = u * len * 0.3;
-                    var (nx, ny, nz) = f.Place.Normal;
+                    var (nx, ny, nz) = f.CellNormal(k);
                     var side = Vector3d.CrossProduct(new Vector3d(nx, ny, nz), d) * 0.5;
                     buckets.Add(new Line(b, b - d + side), c);
                     buckets.Add(new Line(b, b - d - side), c);

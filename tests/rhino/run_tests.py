@@ -1022,6 +1022,260 @@ check("Folded surface: particles carry on from the floor up the slope and the wa
       f"the wall, {counts[J_][2]} alive after a hand-over, off their ground {counts[J_][3]:.1e} m; Join 0: "
       f"{counts[0.0][0]} / {counts[0.0][2]}; Particles node at 40 s: {n_gh} alive with Join, {n_gh0} without")
 
+
+# ---- 3D shaping (0.4): morphs, Warp Field, Landscape, Loft, Bridge, Apply Forces, Intersect, Surface ----
+print("\n== 3D shaping (plaza)", flush=True)
+for key, n in (("warp", 520), ("landscape", 521), ("loft", 522), ("bridge", 523), ("applyforces", 524),
+               ("intersect", 525), ("surface", 526)):
+    G[key] = f"3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e{n}"
+from Groundtrack.Core import Shape  # noqa: E402
+
+morph_names = {}
+for p_ in cs.ObjectProxies:
+    if str(p_.Desc.Category) == "Transform" and str(p_.Desc.SubCategory) == "Morph" and not p_.Obsolete:
+        morph_names[str(p_.Desc.Name)] = p_.Guid
+names_.update(morph_names)
+pz = field_comp("reuters_plaza", "whole", "people", 4400, 0)
+solve()
+pz_f = out(pz, 0)[0].Value
+pzb = pz_f.WorldBox()
+pc_x, pc_y = (pzb.Item1 + pzb.Item4) / 2, (pzb.Item2 + pzb.Item5) / 2
+
+
+def sheet_check(field_out, f_t, t=10.0):
+    """Particles and streamlines on a (bent) field: on its ground, inside, at the field's speed."""
+    st_ = emit("stream", 4600, 900)
+    impl(st_.Params.Input[0]).AddSource(field_out)
+    solve()
+    off_l, n_l = 0.0, 0
+    for g_ in out(st_, 0):
+        ok_, pl_ = g_.Value.TryGetPolyline()
+        if not ok_:
+            continue
+        n_l += 1
+        for q in pl_:
+            okq, sq = f_t.SampleWorld(q.X, q.Y, q.Z)
+            off_l = max(off_l, math.sqrt((q.X - sq.Gx) ** 2 + (q.Y - sq.Gy) ** 2 + (q.Z - sq.Z) ** 2) if okq else 99)
+    doc.RemoveObject(st_, False)
+    pc_ = particles_with([field_out], t=t)
+    a_ = alive(pc_)
+    outside, off_p, devs = 0, 0.0, []
+    for p_, v_, _ in a_:
+        ok_, sm = f_t.SampleWorld(p_.X, p_.Y, p_.Z)
+        if not ok_:
+            outside += 1
+            continue
+        off_p = max(off_p, math.sqrt((p_.X - sm.Gx) ** 2 + (p_.Y - sm.Gy) ** 2 + (p_.Z - sm.Z) ** 2))
+        if sm.Speed > 0.05:
+            devs.append(abs(v_.Length / sm.Speed - 1))
+    doc.RemoveObject(pc_, False)
+    devs.sort()
+    dev = devs[len(devs) // 2] if devs else 99
+    zs = [p_.Z for p_, _, _ in a_]
+    return (n_l, off_l, len(a_), outside, off_p, dev, (max(zs) - min(zs)) if zs else 0)
+
+
+def sheet_ok(r):
+    n_l, off_l, n_p, outside, off_p, dev, _ = r
+    return n_l > 10 and off_l < 0.05 and n_p > 300 and outside == 0 and off_p < 0.05 and dev < 0.05
+
+
+def sheet_text(r):
+    n_l, off_l, n_p, outside, off_p, dev, zr = r
+    return (f"{n_l} streamlines (off the sheet {off_l:.3f} m); {n_p} particles: {outside} outside, off the sheet {off_p:.3f} m, "
+            f"speed vs the field {dev * 100:.2f} %, spread over {zr:.1f} m in height")
+
+
+# Grasshopper's own morph nodes on a field
+ax_line = GH_Line(RG.Line(RG.Point3d(pc_x, pzb.Item2, 0), RG.Point3d(pc_x, pzb.Item5, 0)))
+for label, node, ins in (
+        ("Twist 180 deg about the plaza's long axis", "Twist", dict(i1=ax_line, i2=GH_Number(math.pi))),
+        ("Maelstrom (vortex)", "Maelstrom", dict(i1=Grasshopper.Kernel.Types.GH_Plane(RG.Plane(RG.Point3d(pc_x, pc_y, 0), RG.Vector3d.ZAxis)),
+                                                  i2=GH_Number(5.0), i3=GH_Number(40.0), i4=GH_Number(math.radians(120)))),
+        ("Bend Deform along an arc", "Bend Deform", dict(i1=Grasshopper.Kernel.Types.GH_Arc(RG.Arc(
+            RG.Point3d(pc_x, pzb.Item2, 0), RG.Point3d(pc_x, pc_y, 12), RG.Point3d(pc_x, pzb.Item5, 0))))),
+):
+    mn = gh_node(node, pz, 4600, 0, **ins)
+    solve()
+    errs = msgs(mn)
+    outs_ = list(impl(mn.Params.Output[0]).VolatileData.AllData(True))
+    f_m = impl(outs_[0]).Value if outs_ else None
+    r = sheet_check(impl(mn.Params.Output[0]), f_m) if f_m is not None else (0, 99, 0, 0, 99, 99, 0)
+    check(f"Morph: Grasshopper {label}", not errs and f_m is not None and f_m.Warped and sheet_ok(r), sheet_text(r))
+    doc.RemoveObject(mn, False)
+
+# Warp Field, every mode
+for mode in ("twist", "bend", "swirl", "wave", "taper", "bulge"):
+    wf = emit("warp", 4600, 100)
+    wire(pz, 0, wf, 0)
+    put(wf, 1, mode)
+    solve()
+    f_w = out(wf, 0)[0].Value
+    r = sheet_check(impl(wf.Params.Output[0]), f_w)
+    check(f"Warp Field {mode}", not msgs(wf) and f_w.Warped and sheet_ok(r), f"{wf.Message}: " + sheet_text(r))
+    doc.RemoveObject(wf, False)
+
+# Landscape: relief by density, softened, and draped over a modelled surface
+ld = emit("landscape", 4600, 200)
+wire(pz, 0, ld, 0)
+put(ld, 1, 6.0)
+put(ld, 3, 8.0)
+solve()
+f_l = out(ld, 0)[0].Value
+zs_l = [f_l.CellWorld(k).Item3 for k in range(f_l.Count) if f_l.Has[k]]
+srf = RG.NurbsSurface.CreateFromCorners(RG.Point3d(pzb.Item1 - 5, pzb.Item2 - 5, 2), RG.Point3d(pzb.Item4 + 5, pzb.Item2 - 5, 2),
+                                        RG.Point3d(pzb.Item4 + 5, pzb.Item5 + 5, 14), RG.Point3d(pzb.Item1 - 5, pzb.Item5 + 5, 14))
+ld2 = emit("landscape", 4600, 300)
+wire(pz, 0, ld2, 0)
+impl(ld2.Params.Input[4]).PersistentData.Append(Grasshopper.Kernel.Types.GH_Surface(srf.ToBrep()))
+solve()
+f_d = out(ld2, 0)[0].Value
+worst_d = 0.0
+for k in range(0, f_d.Count, 11):
+    if not f_d.Has[k]:
+        continue
+    w_ = f_d.CellWorld(k)
+    t_ = (w_.Item2 - (pzb.Item2 - 5)) / ((pzb.Item5 + 5) - (pzb.Item2 - 5))
+    worst_d = max(worst_d, abs(w_.Item3 - (2 + 12 * t_)))
+r_d = sheet_check(impl(ld2.Params.Output[0]), f_d)
+check("Landscape: relief 8 m by density, softened 6 m; draped over a sloping surface",
+      max(zs_l) - min(zs_l) > 6 and worst_d < 0.05 and r_d[3] == 0 and r_d[5] < 0.05,
+      f"relief: ground from {min(zs_l):.1f} to {max(zs_l):.1f} m; draped: largest height error {worst_d:.3f} m; "
+      f"particles on it: {r_d[2]}, {r_d[3]} outside, speed vs the field {r_d[5] * 100:.2f} %")
+
+# Loft: three stacked plaza layers 8 m apart joined at their edges
+lofted = []
+for i_, (clip_, dz_) in enumerate((("whole", 16.0), ("plaza3", 8.0), ("plaza1", 0.0))):
+    fl_ = field_comp("reuters_plaza", clip_, "people", 4400, 400 + 60 * i_)
+    lofted.append(moved(fl_, 0, 0, dz_, 4500, 400 + 60 * i_))
+lf = emit("loft", 4700, 450)
+for m_ in lofted:
+    impl(lf.Params.Input[0]).AddSource(impl(m_.Params.Output[0]))
+solve()
+folds = [g_.Value for g_ in out(lf, 0)]
+all_l = [g_.Value for g_ in out(lf, 1)]
+ends_ok = True
+for fo_, (ztop, zbot) in zip(folds, ((16.0, 8.0), (8.0, 0.0))):
+    z_first = statistics.median(fo_.CellWorld(i_).Item3 for i_ in range(fo_.Nx))
+    z_last = statistics.median(fo_.CellWorld((fo_.Ny - 1) * fo_.Nx + i_).Item3 for i_ in range(fo_.Nx))
+    ends_ok = ends_ok and abs(z_first - ztop) < 0.5 and abs(z_last - zbot) < 0.5
+ps = ParticleSystem()
+for f_ in all_l:
+    ps.Fields.Add(f_)
+ps.Rate, ps.Life, ps.Seed, ps.Join = 300.0, 120.0, 1, 2.0
+first, reached_l, top_down = {}, {}, 0
+for t_ in range(1, 91):
+    ps.StepTo(float(t_))
+    for p_ in ps.Alive:
+        first.setdefault(p_.Id, p_.Layer)
+        reached_l[p_.Id] = reached_l.get(p_.Id, set()) | {p_.Layer}
+over_fold = sum(1 for i_ in first if first[i_] in (0, 2, 4) and len(reached_l[i_] & {1, 3}) > 0)
+layer_to_layer = sum(1 for i_ in first if first[i_] in (0, 2, 4) and len(reached_l[i_] & {0, 2, 4}) > 1)
+r_f = sheet_check(impl(lf.Params.Output[1]), folds[0]) if folds else (0, 99, 0, 0, 99, 99, 0)
+check("Loft Fields: three plaza layers 8 m apart joined at their edges",
+      len(folds) == 2 and len(all_l) == 5 and ends_ok and over_fold > 50 and layer_to_layer > 10,
+      f"{len(folds)} folds ({', '.join(f'{fo_.Valid} cells' for fo_ in folds)}), starting and ending on the layers' heights: "
+      f"{ends_ok}; in 90 s {over_fold} particles went from a layer onto a fold, {layer_to_layer} on to another layer")
+
+# Bridge: the plaza and plaza 3 (40 m north, 6 m up): automatic ribbons
+b1 = field_comp("reuters_plaza", "whole", "people", 4400, 700)
+b2 = moved(field_comp("reuters_plaza", "plaza3", "people", 4400, 760), 0, 0, 6.0, 4500, 760)
+b2b = emit("transformfield", 4600, 760)
+wire(b2, 0, b2b, 0)
+impl(b2b.Params.Input[1]).PersistentData.Clear()
+impl(b2b.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(0, 135.0, 0)))
+br = emit("bridge", 4800, 720)
+impl(br.Params.Input[0]).AddSource(impl(b1.Params.Output[0]))
+impl(br.Params.Input[0]).AddSource(impl(b2b.Params.Output[0]))
+put(br, 2, 2)
+put(br, 5, 120.0)
+solve()
+bridges = [g_.Value for g_ in out(br, 0)]
+all_b = [g_.Value for g_ in out(br, 2)]
+ps = ParticleSystem()
+for f_ in all_b:
+    ps.Fields.Add(f_)
+ps.Rate, ps.Life, ps.Seed, ps.Join = 300.0, 200.0, 1, 2.0
+first, reached_b = {}, {}
+for t_ in range(1, 151):
+    ps.StepTo(float(t_))
+    for p_ in ps.Alive:
+        first.setdefault(p_.Id, p_.Layer)
+        reached_b[p_.Id] = reached_b.get(p_.Id, set()) | {p_.Layer}
+crossed = sum(1 for i_ in first if first[i_] in (0, 1) and ({0, 1} - {first[i_]}) <= reached_b[i_])
+onto_bridge = sum(1 for i_ in first if first[i_] in (0, 1) and any(l_ >= 2 for l_ in reached_b[i_]))
+check("Bridge: automatic ribbons between two plaza levels",
+      len(bridges) >= 2 and all(b_.Warped for b_ in bridges) and onto_bridge > 20 and crossed > 0,
+      f"{len(bridges)} bridges; in 150 s {onto_bridge} particles walked onto a bridge, {crossed} across to the other level")
+
+# Apply Forces: an orbit bends the plaza's flow into a swirl, speeds kept
+axf = emit("axis", 4600, 1000)
+impl(axf.Params.Input[0]).PersistentData.Clear()
+impl(axf.Params.Input[0]).PersistentData.Append(GH_Line(RG.Line(RG.Point3d(pc_x, pc_y, 0), RG.Point3d(pc_x, pc_y, 10))))
+put(axf, 2, 40.0)
+af = emit("applyforces", 4800, 1000)
+wire(pz, 0, af, 0)
+impl(af.Params.Input[1]).AddSource(impl(axf.Params.Output[0]))
+solve()
+f_a = out(af, 0)[0].Value
+mom0 = mom1 = 0.0
+sp_err = 0.0
+for k in range(pz_f.Count):
+    if not pz_f.Has[k]:
+        continue
+    w_ = pz_f.CellWorld(k)
+    v0, v1 = pz_f.CellVelocity(k), f_a.CellVelocity(k)
+    rx, ry = w_.Item1 - pc_x, w_.Item2 - pc_y
+    mom0 += rx * v0.Item2 - ry * v0.Item1
+    mom1 += rx * v1.Item2 - ry * v1.Item1
+    s0, s1 = math.hypot(v0.Item1, v0.Item2), math.hypot(v1.Item1, v1.Item2)
+    sp_err = max(sp_err, abs(s1 - s0))
+check("Apply Forces: an Axis Force bends the flow into a swirl", mom1 > mom0 + 100 and sp_err < 1e-4,
+      f"angular momentum of the flow about the axis {mom0:.0f} -> {mom1:.0f}; speeds kept (largest change {sp_err:.1e} m/s)")
+
+# Intersect: the plaza and a copy tilted 35 deg about an east-west line through its centre cut along that line
+tilt = gh_node("Rotate 3D", pz, 4600, 1100, i1=GH_Number(math.radians(35)), i2=GH_Point(RG.Point3d(pc_x, pc_y, 0)),
+               i3=GH_Vector(RG.Vector3d(1, 0, 0)))
+cut = emit("intersect", 4800, 1100)
+impl(cut.Params.Input[0]).AddSource(impl(pz.Params.Output[0]))
+impl(cut.Params.Input[0]).AddSource(impl(tilt.Params.Output[0]))
+solve()
+cuts = [g_.Value for g_ in out(cut, 0)]
+cut_len = sum(c_.GetLength() for c_ in cuts)
+off_axis = 0.0
+for c_ in cuts:
+    ok_, pl_ = c_.TryGetPolyline()
+    for q in pl_:
+        off_axis = max(off_axis, math.hypot(q.Y - pc_y, q.Z))
+check("Intersect Fields: the plaza and a copy tilted 35 deg cut along the hinge line", len(cuts) >= 1 and cut_len > 10 and off_axis < 1.0,
+      f"{len(cuts)} cut lines, {cut_len:.1f} m long, at most {off_axis:.2f} m off the hinge line; flow angles {[round(a_.Value, 1) for a_ in out(cut, 1)][:4]}")
+
+# Field Surface: a mesh and outlines, also of a warped field
+fs = emit("surface", 4800, 1200)
+wf2 = emit("warp", 4600, 1200)
+wire(pz, 0, wf2, 0)
+wire(wf2, 0, fs, 0)
+solve()
+mesh_ = out(fs, 0)[0].Value
+outl = [g_.Value for g_ in out(fs, 1)]
+check("Field Surface: a coloured mesh and outlines of a warped field",
+      mesh_.Faces.Count > 1000 and mesh_.VertexColors.Count == mesh_.Vertices.Count and len(outl) >= 1 and outl[0].IsClosed,
+      f"{mesh_.Faces.Count} faces, {len(outl)} outlines (longest {outl[0].GetLength():.0f} m)")
+
+# step time on a bent field
+ps = ParticleSystem(out(wf2, 0)[0].Value)
+ps.Rate, ps.Life, ps.Seed = 300.0, 30.0, 1
+ps.StepTo(15.0)
+for _ in range(3):
+    if len(ps.Alive):
+        ps.Rate = ps.Rate * 3000.0 / len(ps.Alive)
+        ps.StepTo(0.0)
+        ps.StepTo(15.0)
+sw = System.Diagnostics.Stopwatch.StartNew()
+for _ in range(60):
+    ps.Step()
+check("Step time on a warped field", len(ps.Alive) > 2000, f"{len(ps.Alive)} particles: {sw.Elapsed.TotalMilliseconds / 60:.1f} ms per step")
+
 # ---- definitions saved with older versions open cleanly (components gained inputs since) ----------
 print("\n== Older definitions", flush=True)
 clr.AddReference(r"C:\Program Files\Rhino 8\Plug-ins\Grasshopper\GH_IO.dll")
@@ -1255,6 +1509,90 @@ if args.example:
     group("7  Folded surface: a motorway clip (Smooth Field: holes closed) three times, hinged edge to edge - floor, 30 deg "
           "slope, wall (Move + Rotate 3D about the shared edges); vehicles carry on from one onto the next (Particles: Join 8 m)",
           l10 + [f10, sm10] + chain7 + [s7b, t7b, p7b], Color.FromArgb(60, 230, 120, 160))
+
+    # 8: a lofted landscape - three plaza layers stacked 8 m apart, the top one waving, joined at their edges
+    off8 = 900.0
+    G["loft"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e522"
+    G["warp"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e520"
+    G["surface"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e526"
+    G["bridge"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e523"
+    G["intersect"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e525"
+    lay8, objs8 = [], []
+    for i_, (clip_, dz_) in enumerate((("whole", 16.0), ("plaza3", 8.0), ("plaza1", 0.0))):
+        f_, l_ = field_with_lists(clip_, "people", 260, 2700 + 110 * i_)
+        f_.Hidden = True
+        tf_ = comp("transformfield", 420, 2700 + 110 * i_)
+        tf_.Hidden = True
+        impl(tf_.Params.Input[0]).AddSource(impl(f_.Params.Output[0]))
+        impl(tf_.Params.Input[1]).PersistentData.Clear()
+        impl(tf_.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(off8, 0, dz_)))
+        lay8.append(tf_)
+        objs8 += l_ + [f_, tf_]
+    wv8 = comp("warp", 580, 2700)
+    wv8.Hidden = True
+    impl(wv8.Params.Input[0]).AddSource(impl(lay8[0].Params.Output[0]))
+    lf8 = comp("loft", 760, 2800)
+    lf8.Hidden = True
+    for src_ in (wv8, lay8[1], lay8[2]):
+        impl(lf8.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+    s8 = comp("stream", 960, 2740)
+    impl(s8.Params.Input[0]).AddSource(impl(lf8.Params.Output[1]))
+    t8 = comp("timeline", 780, 2960)
+    p8 = comp("particles", 960, 2880)
+    impl(p8.Params.Input[0]).AddSource(impl(lf8.Params.Output[1]))
+    impl(p8.Params.Input[1]).AddSource(impl(t8.Params.Output[0]))
+    sf8 = comp("surface", 960, 3000)
+    impl(sf8.Params.Input[0]).AddSource(impl(lf8.Params.Output[1]))
+    group("8  Lofted landscape: three plaza layers stacked 8 m apart (Transform Field), the top one waving (Warp Field), "
+          "joined at their edges by rounded folds (Loft Fields): streamlines, particles and surfaces over all of it",
+          objs8 + [wv8, lf8, s8, t8, p8, sf8], Color.FromArgb(60, 120, 200, 150))
+
+    # 9: bend, bridge and cut - plaza 3 bent up and joined to the plaza by ribbons; a tilted copy cutting the plaza
+    off9 = 1100.0
+    f11, l11 = field_with_lists("whole", "people", 260, 3250)
+    f12, l12 = field_with_lists("plaza3", "people", 260, 3380)
+    f11.Hidden = f12.Hidden = True
+    tf11, tf12 = comp("transformfield", 420, 3250), comp("transformfield", 420, 3380)
+    for tf_, src_, mv in ((tf11, f11, RG.Vector3d(off9, 0, 0)), (tf12, f12, RG.Vector3d(off9, 135.0, 6.0))):
+        tf_.Hidden = True
+        impl(tf_.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+        impl(tf_.Params.Input[1]).PersistentData.Clear()
+        impl(tf_.Params.Input[1]).PersistentData.Append(GH_Vector(mv))
+    bd12 = comp("warp", 580, 3380)
+    bd12.Hidden = True
+    impl(bd12.Params.Input[0]).AddSource(impl(tf12.Params.Output[0]))
+    for ix, goo in ((1, GH_String("bend")), (2, GH_Number(60.0))):
+        impl(bd12.Params.Input[ix]).PersistentData.Clear()
+        impl(bd12.Params.Input[ix]).PersistentData.Append(goo)
+    br9 = comp("bridge", 760, 3300)
+    br9.Hidden = True
+    impl(br9.Params.Input[0]).AddSource(impl(tf11.Params.Output[0]))
+    impl(br9.Params.Input[0]).AddSource(impl(bd12.Params.Output[0]))
+    for ix, goo in ((2, GH_Integer(2)), (5, GH_Number(120.0))):
+        impl(br9.Params.Input[ix]).PersistentData.Clear()
+        impl(br9.Params.Input[ix]).PersistentData.Append(goo)
+    s9 = comp("stream", 960, 3260)
+    impl(s9.Params.Input[0]).AddSource(impl(br9.Params.Output[2]))
+    t9 = comp("timeline", 780, 3470)
+    p9 = comp("particles", 960, 3390)
+    impl(p9.Params.Input[0]).AddSource(impl(br9.Params.Output[2]))
+    impl(p9.Params.Input[1]).AddSource(impl(t9.Params.Output[0]))
+    tl9 = add(impl(cs.EmitObject(names_["Rotate 3D"])), 580, 3520)
+    tl9.Hidden = True
+    impl(tl9.Params.Input[0]).AddSource(impl(tf11.Params.Output[0]))
+    b11 = Catalog.Load(plaza, "whole", "people", True).Bounds()
+    for ix, goo in ((1, GH_Number(math.radians(35))), (2, GH_Point(RG.Point3d(off9 + (b11.Item1 + b11.Item3) / 2, (b11.Item2 + b11.Item4) / 2, 0))),
+                    (3, GH_Vector(RG.Vector3d(1, 0, 0)))):
+        impl(tl9.Params.Input[ix]).PersistentData.Clear()
+        impl(tl9.Params.Input[ix]).PersistentData.Append(goo)
+    ct9 = comp("intersect", 760, 3520)
+    impl(ct9.Params.Input[0]).AddSource(impl(tf11.Params.Output[0]))
+    impl(ct9.Params.Input[0]).AddSource(impl(tl9.Params.Output[0]))
+    s9b = comp("stream", 960, 3540)
+    impl(s9b.Params.Input[0]).AddSource(impl(tl9.Params.Output[0]))
+    group("9  Bend, bridge, cut: plaza 3 bent up 60 deg (Warp Field) and joined to the plaza by automatic ribbons (Bridge); "
+          "a copy tilted 35 deg cuts the plaza (Intersect Fields)",
+          l11 + l12 + [f11, f12, tf11, tf12, bd12, br9, s9, t9, p9, tl9, ct9, s9b], Color.FromArgb(60, 200, 160, 230))
     ex.NewSolution(False)
     bad = [(o.NickName, [str(m) for m in o.RuntimeMessages(Grasshopper.Kernel.GH_RuntimeMessageLevel.Error)])
            for o in map(impl, ex.Objects) if hasattr(o, "RuntimeMessages") and

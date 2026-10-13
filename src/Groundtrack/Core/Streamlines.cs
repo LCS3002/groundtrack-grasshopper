@@ -34,6 +34,30 @@ namespace Groundtrack.Core
         public static List<Streamline> Trace(FieldData f, double spacing, double minLength = double.NaN,
                                              double minConfidence = 0.05, int maxLines = 20000)
         {
+            if (f != null && f.Warped)
+            {
+                // traced in the grid, then laid onto the bent sheet
+                var flat = f.Unwarped();
+                var bent = TraceInPlane(flat, spacing, minLength, minConfidence, maxLines);
+                foreach (var l in bent)
+                    for (int p = 0; p < l.Count; p++)
+                    {
+                        var (lx, ly) = f.Place.Inverse(l.X[p], l.Y[p]);
+                        (l.X[p], l.Y[p], l.Z[p]) = f.LocalToWorld(lx, ly, 0);
+                    }
+                return bent;
+            }
+            var lines = TraceInPlane(f, spacing, minLength, minConfidence, maxLines);
+            if (f != null && f.Place.Tilted)
+                foreach (var l in lines)
+                    for (int p = 0; p < l.Count; p++)
+                        (l.X[p], l.Y[p], l.Z[p]) = f.Place.ToWorld(l.X[p], l.Y[p], l.Z[p]);
+            return lines;
+        }
+
+        /// <summary>Streamlines in the field's plane (= world for flat fields).</summary>
+        static List<Streamline> TraceInPlane(FieldData f, double spacing, double minLength, double minConfidence, int maxLines)
+        {
             var lines = new List<Streamline>();
             if (f == null || f.Valid == 0) return lines;
             double cell = f.WorldCell;
@@ -63,10 +87,6 @@ namespace Groundtrack.Core
                 for (int p = 0; p < line.Count; p++) grid.Add(line.X[p], line.Y[p], id);
                 lines.Add(line);
             }
-            if (f.Place.Tilted)
-                foreach (var l in lines)
-                    for (int p = 0; p < l.Count; p++)
-                        (l.X[p], l.Y[p], l.Z[p]) = f.Place.ToWorld(l.X[p], l.Y[p], l.Z[p]);
             return lines;
         }
 
