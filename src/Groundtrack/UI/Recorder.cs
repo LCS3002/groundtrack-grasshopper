@@ -19,7 +19,7 @@ namespace Groundtrack.UI
         {
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return null;
-            var all = doc.Views.GetViewList(true, false);
+            var all = doc.Views.GetStandardRhinoViews();
             return doc.Views.ActiveView ?? (all.Length > 0 ? all[0] : null);
         }
 

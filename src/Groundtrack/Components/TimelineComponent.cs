@@ -179,11 +179,11 @@ namespace Groundtrack.Components
         }
 
         // ---- UI hooks ------------------------------------------------------------------------
-        public override void CreateAttributes() => m_attributes = new Attributes(this);
+        public override void CreateAttributes() => m_attributes = new TimelineAttributes(this);
 
-        sealed class Attributes : GH_ComponentAttributes
+        sealed class TimelineAttributes : GH_ComponentAttributes
         {
-            public Attributes(TimelineComponent owner) : base(owner) { }
+            public TimelineAttributes(TimelineComponent owner) : base(owner) { }
 
             public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
