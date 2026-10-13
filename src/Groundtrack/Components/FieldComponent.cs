@@ -160,7 +160,7 @@ namespace Groundtrack.Components
         public override bool Read(GH_IO.Serialization.GH_IReader reader)
         {
             _read = true;
-            return base.Read(reader);
+            return Compat.Read(this, reader, r => base.Read(r));
         }
 
         public override void AddedToDocument(GH_Document document)

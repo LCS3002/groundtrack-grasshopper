@@ -1,11 +1,11 @@
-# groundtrack for Grasshopper — quick guide (0.2)
+# groundtrack for Grasshopper — quick guide (0.3)
 
 ## Install / update
 - **Installed:** `%APPDATA%\Grasshopper\Libraries\groundtrack\groundtrack.gha`.
 - **To update:** close Rhino, then replace that file.
 - **Keep one copy only.** A second copy (for example the .yak package as well) makes Grasshopper report a conflict.
 - **"Package not found" popup:** the plugin isn't loaded in that Rhino. Ignore the package server and install as above.
-- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 5 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up.
+- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 7 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up, levels joined by ramps, a folded surface.
 
 ## Data
 - **Field** finds `GROUNDTRACK RESULTS` by itself. Its **Site / Clip / Group** dropdowns appear when you place it.
@@ -80,6 +80,16 @@
 13. **Where flows meet:** Streamlines or Trails of A and of B → **Crossings**.
 14. **Recolour:** **Gradient** → the Gradient input. Particles **Colour**: `speed` / `layer` / `age`.
 15. **Export:** right-click a component → **Bake**. The speed colours are kept.
+16. **Levels joined by ramps (one continuous flow):**
+    - Lower Field, and an upper Field → Transform Field (Move up, e.g. 5 m, and to the side so they don't overlap; leave a gap of e.g. 30 m).
+    - Draw 3D ramp curves across the gap: start a few metres inside the lower field, end a few metres inside the upper one, flat at both ends. Draw them in the direction of the flow (a second curve for the way back).
+    - Ramps → **Field from Curves**; lower + upper + ramps → **Merge Fields** (defaults) → Streamlines / Particles.
+    - Put the ramps where people actually leave and enter the fields, so the flow carries on into them.
+17. **Folded surface (floor → slope → wall):**
+    - Copies of a field end to end (Move), each turned about the edge it shares with the one before (**Rotate 3D**: Center on that edge, Axis along it).
+    - All copies into Particles **Fields**; set **Join** to the gaps at the edges (e.g. 8 m).
+    - Ragged or holey fields: **Smooth Field** (Radius 4, Fill) first.
+    - Lay the copies along the flow's start-to-end direction, so the flow leaving one arrives where the next one's flow starts.
 
 ## Particles settings
 | Input | Meaning | Try |
@@ -93,6 +103,7 @@
 | Hold | stick to the layer's ground: 1 = on it, 0 = free | 1 / 0.2 |
 | Drag | how fast pushes from forces fade (1/s) | 0.5–2 |
 | Outside | keep particles that leave their field | off |
+| Join | fields meeting edge to edge are one surface: particles carry on onto the next one, across gaps up to this many metres (0 = off) | 2 / 8 |
 | Colour | speed / layer / age | speed |
 
 ## Gotchas
@@ -101,3 +112,4 @@
 - **Merge/Blend with tilted fields:** the result lies in the plane of the strongest field; the others are projected onto it.
 - **Scrubbing backwards** re-runs the simulation from 0. That's expected: it gives the same result every time.
 - **Slow?** Lower Rate, or Interact's Radius.
+- **Join and stacked layers:** Join only hands particles to a field whose ground is within Join of them, and whose flow continues their way. Layers stacked further apart than Join stay separate.

@@ -249,7 +249,7 @@ namespace Groundtrack.Components
             if (reader.TryGetDouble("gt_speed", ref v)) Speed = v;
             if (reader.TryGetDouble("gt_fps", ref v)) Fps = v;
             if (reader.TryGetBoolean("gt_loop", ref b)) Loop = b;
-            return base.Read(reader);
+            return Compat.Read(this, reader, r => base.Read(r));
         }
     }
 }

@@ -785,6 +785,265 @@ f_sf = out(sf, 0)[0].Value
 check("Smooth Field", f_s.Valid == f_in.Valid and f_sf.Valid > f_in.Valid,
       f"{f_in.Valid} cells -> smoothed {f_s.Valid}, with Fill {f_sf.Valid}")
 
+
+# ---- levels joined by ramps, and a folded surface ----------------------------------------------
+print("\n== Ramps between levels, folded surface (plaza)", flush=True)
+G["curvefield"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e509"
+RAMP_GAP, RAMP_RISE = 30.0, 5.0
+
+
+def ramp_curves(lower, upper):
+    """Two straight ramps north across the gap from a lower field to an upper one north of it, in
+    2 m columns both fields reach: up where most people leave the lower field northwards, down (at
+    least 10 m beside it) where most come into it from the north. Each runs from 4 m inside the
+    lower field's data to 4 m inside the upper's, flat at both ends."""
+    def columns(f):
+        cols = {}
+        for k in range(f.Count):
+            if f.Has[k]:
+                w = f.CellWorld(k)
+                c = cols.setdefault(round(w.Item1 / 2.0) * 2.0, [1e9, -1e9, 0.0, 0.0])
+                c[0] = min(c[0], w.Item2)
+                c[1] = max(c[1], w.Item2)
+        for k in range(f.Count):
+            if f.Has[k]:
+                w = f.CellWorld(k)
+                c = cols[round(w.Item1 / 2.0) * 2.0]
+                if w.Item2 >= c[1] - 6:
+                    vy = f.CellVelocity(k).Item2 * f.Density[k]
+                    if vy > 0:
+                        c[2] += vy
+                    else:
+                        c[3] -= vy
+        return cols
+
+    lo, hi = columns(lower), columns(upper)
+    common = [x for x in lo if x in hi and lo[x][1] - lo[x][0] > 10 and hi[x][1] - hi[x][0] > 10]
+    x_up = max(common, key=lambda x: lo[x][2])
+    x_dn = max((x for x in common if abs(x - x_up) >= 10), key=lambda x: lo[x][3])
+
+    def ground(f, x, y, default):
+        ok_, s_ = f.Sample(x, y)
+        return s_.Z if ok_ else default
+
+    def curve(x, upwards):
+        y0, y1 = lo[x][1], hi[x][0]          # the lower field's north end, the upper's south end here
+        zl, zu = ground(lower, x, y0 - 1, 0.0), ground(upper, x, y1 + 1, RAMP_RISE)
+        poly = RG.Polyline()
+        for i in range(81):
+            y = (y0 - 4) + (y1 - y0 + 8) * i / 80.0
+            t = min(1.0, max(0.0, (y - y0) / (y1 - y0)))
+            poly.Add(RG.Point3d(x, y, zl + (zu - zl) * t * t * (3 - 2 * t)))
+        if not upwards:
+            poly.Reverse()
+        return RG.PolylineCurve(poly)
+
+    return [curve(x_up, True), curve(x_dn, False)], x_up, x_dn
+
+
+def flow_axis(f):
+    """The direction along a field's main flow - from where it starts to where it ends, so that
+    copies laid end to end line up (a road that bends slightly arrives where the next copy's road
+    begins) - and the field's extent along it (a0, a1)."""
+    c2 = s2 = 0.0
+    for k in range(f.Count):
+        if f.Has[k] and f.Speed[k] > 0.5:
+            a = math.atan2(f.Vy[k], f.Vx[k])
+            c2 += f.Density[k] * math.cos(2 * a)
+            s2 += f.Density[k] * math.sin(2 * a)
+    ang = 0.5 * math.atan2(s2, c2)
+    u = (math.cos(ang), math.sin(ang))
+    pts = [(f.CellWorld(k).Item1, f.CellWorld(k).Item2) for k in range(f.Count) if f.Has[k]]
+    al = [x * u[0] + y * u[1] for x, y in pts]
+    lo, hi = min(al), max(al)
+    s_ = [q for q, a in zip(pts, al) if a < lo + 25]
+    e_ = [q for q, a in zip(pts, al) if a > hi - 25]
+    dx = sum(q[0] for q in e_) / len(e_) - sum(q[0] for q in s_) / len(s_)
+    dy = sum(q[1] for q in e_) / len(e_) - sum(q[1] for q in s_) / len(s_)
+    d = math.hypot(dx, dy)
+    u = (dx / d, dy / d)
+    al = [x * u[0] + y * u[1] for x, y in pts]
+    return u, min(al) - f.WorldCell / 2, max(al) + f.WorldCell / 2
+
+
+def fold_steps(xoff, f, angle1=30.0, angle2=60.0):
+    """Grasshopper Move / Rotate 3D steps for three copies of a field hinged edge to edge along its
+    main flow: a floor, a slope (angle1) and, after it, a wall (angle1 + angle2)."""
+    u, a0, a1 = flow_axis(f)
+    L = a1 - a0
+    t1 = math.radians(angle1)
+    axis = GH_Vector(RG.Vector3d(u[1], -u[0], 0))          # u x Z: turning about it lifts what lies ahead
+    h1 = RG.Point3d(xoff + u[0] * a1, u[1] * a1, 0)
+    h2 = RG.Point3d(h1.X + u[0] * L * math.cos(t1), h1.Y + u[1] * L * math.cos(t1), L * math.sin(t1))
+    rot1 = ("Rotate 3D", {1: GH_Number(t1), 2: GH_Point(h1), 3: axis})
+    rot2 = ("Rotate 3D", {1: GH_Number(math.radians(angle2)), 2: GH_Point(h2), 3: axis})
+    mv = [("Move", {1: GH_Vector(RG.Vector3d(xoff + n * L * u[0], n * L * u[1], 0))}) for n in range(3)]
+    return [[mv[0]], [mv[1], rot1], [mv[2], rot1, rot2]]
+
+
+def gh_chain(adder, src, steps, x, y, collect=None):
+    """Grasshopper's own Transform nodes in a row (Move, Rotate 3D ...)."""
+    node = src
+    for i, (name, ins) in enumerate(steps):
+        n_ = adder(impl(cs.EmitObject(names_[name])), x + 150 * i, y)
+        n_.Hidden = True
+        if collect is not None:
+            collect.append(n_)
+        impl(n_.Params.Input[0]).AddSource(impl(node.Params.Output[0]))
+        for ix, goo in ins.items():
+            prm = impl(n_.Params.Input[ix])
+            prm.PersistentData.Clear()
+            prm.PersistentData.Append(goo)
+        node = n_
+    return node
+
+
+def add_main(obj, x, y):
+    obj.CreateAttributes()
+    obj.Attributes.Pivot = PointF(x, y)
+    doc.AddObject(obj, False)
+    return obj
+
+
+# levels joined by ramps: plaza at 0 m, plaza 3 north of it, 5 m up; two ramps; merged
+lo_f = field_comp("reuters_plaza", "whole", "people", 3400, 0)
+hi_f = field_comp("reuters_plaza", "plaza3", "people", 3400, 100)
+solve()
+lb_ = out(lo_f, 0)[0].Value.Bounds()
+hb_ = out(hi_f, 0)[0].Value.Bounds()
+hi_t = emit("transformfield", 3600, 100)
+wire(hi_f, 0, hi_t, 0)
+impl(hi_t.Params.Input[1]).PersistentData.Clear()
+impl(hi_t.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(0, lb_.Item4 + RAMP_GAP - hb_.Item2, RAMP_RISE)))
+solve()
+lower_, upper_ = out(lo_f, 0)[0].Value, out(hi_t, 0)[0].Value
+ramps, up_x, down_x = ramp_curves(lower_, upper_)
+cf = emit("curvefield", 3600, 200)
+impl(cf.Params.Input[0]).PersistentData.Clear()
+for c_ in ramps:
+    impl(cf.Params.Input[0]).PersistentData.Append(GH_Curve(c_))
+mg_r = emit("merge", 3800, 100)
+for src_ in (lo_f, hi_t, cf):
+    impl(mg_r.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+st_r = emit("stream", 4000, 100)
+wire(mg_r, 0, st_r, 0)
+solve()
+f_r = out(mg_r, 0)[0].Value
+steep, segs_, climbing = 0, 0, 0
+for g_ in out(st_r, 0):
+    ok_, pl_ = g_.Value.TryGetPolyline()
+    if not ok_:
+        continue
+    zs_ = [q.Z for q in pl_]
+    if min(zs_) < 0.5 and max(zs_) > RAMP_RISE - 0.5:
+        climbing += 1
+    for k_ in range(1, pl_.Count):
+        run_ = math.hypot(pl_[k_].X - pl_[k_ - 1].X, pl_[k_].Y - pl_[k_ - 1].Y)
+        segs_ += 1
+        if abs(pl_[k_].Z - pl_[k_ - 1].Z) > 2 * max(run_, 1e-9):
+            steep += 1
+ps = ParticleSystem(f_r)
+ps.Rate, ps.Life, ps.Seed = 300.0, 120.0, 1
+lowseen, highseen, between, downs, outside_r = set(), set(), set(), set(), 0
+for t_ in range(1, 91):
+    ps.StepTo(float(t_))
+    for p_ in ps.Alive:
+        if p_.Z < 0.5:
+            lowseen.add(p_.Id)
+            if p_.Id in highseen:
+                downs.add(p_.Id)
+        elif p_.Z > RAMP_RISE - 0.5:
+            highseen.add(p_.Id)
+            if p_.Id in lowseen:
+                between.add(p_.Id)
+for p_ in ps.Alive:
+    if not f_r.Sample(p_.X, p_.Y)[0]:
+        outside_r += 1
+check("Ramps join two levels into one continuous flow",
+      len(ramps) == 2 and steep == 0 and climbing > 0 and len(between) > 20 and len(downs) > 5 and outside_r == 0,
+      f"ramps at x {up_x:.0f} m (up) and {down_x:.0f} m (down); merged {f_r.Valid} cells; {segs_} streamline segments, "
+      f"{steep} steeper than 2:1; {climbing} streamlines run between the levels; in 90 s {len(between)} particles walked "
+      f"from the plaza up onto the upper level and {len(downs)} down; {outside_r} outside")
+
+# a folded surface: floor, 30 deg slope, wall - Grasshopper's Move + Rotate 3D, particles join
+FOLD_JOIN = 8.0
+fb_raw = field_comp("blackwall_motorway", "motorway5", "vehicles", 3300, 400)
+fb_ = emit("smoothfield", 3400, 400)                 # close holes in the lanes first
+wire(fb_raw, 0, fb_, 0)
+put(fb_, 1, 4.0)
+put(fb_, 2, True)
+solve()
+fold_base = out(fb_, 0)[0].Value
+fold_nodes = [gh_chain(add_main, fb_, st_, 3600, 400 + 60 * i) for i, st_ in enumerate(fold_steps(0.0, fold_base))]
+solve()
+fold_fields = [impl(list(impl(n_.Params.Output[0]).VolatileData.AllData(True))[0]).Value for n_ in fold_nodes]
+hinge_gap = 0.0
+for a_, b_ in ((0, 1), (1, 2)):
+    # the copies meet: the north edge of one is the south edge of the next
+    fa, fb2 = fold_fields[a_], fold_fields[b_]
+    u_, a0_, a1_ = flow_axis(fold_base)
+    pa = fa.Place.Apply(u_[0] * a1_, u_[1] * a1_, 0.0)
+    pb = fb2.Place.Apply(u_[0] * a0_, u_[1] * a0_, 0.0)
+    hinge_gap = max(hinge_gap, math.sqrt((pa.Item1 - pb.Item1) ** 2 + (pa.Item2 - pb.Item2) ** 2 + (pa.Item3 - pb.Item3) ** 2))
+counts = {}
+for join_ in (0.0, FOLD_JOIN):
+    ps = ParticleSystem()
+    for f_ in fold_fields:
+        ps.Fields.Add(f_)
+    ps.Rate, ps.Life, ps.Seed, ps.Join = 300.0, 120.0, 1, join_
+    first, reached = {}, {}
+    for t_ in range(1, 91):
+        ps.StepTo(float(t_))
+        for p_ in ps.Alive:
+            first.setdefault(p_.Id, p_.Layer)
+            reached[p_.Id] = max(reached.get(p_.Id, 0), p_.Layer)
+    off_ground = 0.0
+    for p_ in ps.Alive:
+        if p_.Bridge > 0:                    # crossing a gap between copies
+            continue
+        f_ = fold_fields[p_.Layer]
+        ok_, s_ = f_.SampleWorld(p_.X, p_.Y, p_.Z)
+        n_ = f_.Place.Normal
+        off_ground = max(off_ground, abs((p_.X - s_.Gx) * n_.Item1 + (p_.Y - s_.Gy) * n_.Item2 + (p_.Z - s_.Z) * n_.Item3) if ok_ else 99)
+    counts[join_] = (sum(1 for i_ in first if first[i_] == 0 and reached[i_] >= 1),
+                     sum(1 for i_ in first if first[i_] == 0 and reached[i_] == 2),
+                     sum(1 for p_ in ps.Alive if p_.Joined > 0), off_ground)
+pc_f = particles_with([impl(n_.Params.Output[0]) for n_ in fold_nodes], t=40.0, i15="layer", i17=FOLD_JOIN)
+n_gh = len(out(pc_f, 0))
+put(pc_f, 17, 0.0)
+solve()
+n_gh0 = len(out(pc_f, 0))
+J_ = FOLD_JOIN
+check("Folded surface: particles carry on from the floor up the slope and the wall (Join)",
+      hinge_gap < 1e-6 and counts[J_][0] > 500 and counts[J_][1] > 100 and counts[J_][3] < 1e-6
+      and counts[0.0][0] == 0 and counts[0.0][2] == 0 and n_gh > n_gh0,
+      f"motorway 5 (Smooth Field 4 m, Fill) three times (floor, 30 deg slope, wall); copies meet at the hinges (gap {hinge_gap:.1e} m); in 90 s "
+      f"with Join {J_:.0f} m: {counts[J_][0]} vehicles born on the floor went up onto the slope, {counts[J_][1]} on up "
+      f"the wall, {counts[J_][2]} alive after a hand-over, off their ground {counts[J_][3]:.1e} m; Join 0: "
+      f"{counts[0.0][0]} / {counts[0.0][2]}; Particles node at 40 s: {n_gh} alive with Join, {n_gh0} without")
+
+# ---- definitions saved with older versions open cleanly (components gained inputs since) ----------
+print("\n== Older definitions", flush=True)
+clr.AddReference(r"C:\Program Files\Rhino 8\Plug-ins\Grasshopper\GH_IO.dll")
+from GH_IO.Serialization import GH_Archive  # noqa: E402
+fixtures = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+for fx in sorted(f_ for f_ in os.listdir(fixtures) if f_.endswith(".gh")):
+    arc = GH_Archive()
+    arc.ReadFromFile(os.path.join(fixtures, fx))
+    old = GH_Document()
+    arc.ExtractObject(old, "Definition")
+    io_msgs = [str(m.Message) for m in arc.Messages if str(m.Type) != "info"]
+    old.Enabled = True
+    for o in map(impl, old.Objects):
+        if str(getattr(o, "Name", "")) == "Timeline":
+            o.SetTime(10.0, False)
+    old.NewSolution(False)
+    pcs = [o for o in map(impl, old.Objects) if str(getattr(o, "Name", "")) == "Particles"]
+    n_pts = [len(list(impl(o.Params.Output[0]).VolatileData.AllData(True))) for o in pcs]
+    wired = all(impl(o.Params.Input[0]).SourceCount > 0 for o in pcs)
+    check(f"Opens {fx}", not io_msgs and pcs and wired and all(n > 0 for n in n_pts),
+          f"IO messages {io_msgs}; {len(pcs)} Particles, still wired, with {n_pts} particles at 10 s")
+
 # ---- the example file ------------------------------------------------------------------------
 if args.example:
     ex = GH_Document()
@@ -822,11 +1081,12 @@ if args.example:
             g.AddObject(o.InstanceGuid)
         add(g, 0, 0)
 
-    def field_with_lists(clip, grp, x, y):
+    def field_with_lists(clip, grp, x, y, site="reuters_plaza"):
+        st = next(s_ for s_ in sites if s_.Name == site)
         f_ = comp("field", x, y)
-        lists = [dropdown("Site", [s.Name for s in sites], "reuters_plaza", x - 210, y - 32),
-                 dropdown("Clip", list(plaza.Clips), clip, x - 210, y - 10),
-                 dropdown("Group", [str(k) for k in Catalog.FieldFiles(plaza, clip).Keys], grp, x - 210, y + 12)]
+        lists = [dropdown("Site", [s.Name for s in sites], site, x - 210, y - 32),
+                 dropdown("Clip", list(st.Clips), clip, x - 210, y - 10),
+                 dropdown("Group", [str(k) for k in Catalog.FieldFiles(st, clip).Keys], grp, x - 210, y + 12)]
         for ix, vl in zip((1, 2, 3), lists):
             impl(f_.Params.Input[ix]).AddSource(vl)
         return f_, lists
@@ -934,6 +1194,67 @@ if args.example:
     impl(p7.Params.Input[1]).AddSource(impl(t7.Params.Output[0]))
     group("5  Tilted: the plaza stood up on its south edge with Grasshopper's Rotate 3D (90 deg about X); "
           "streamlines and particles run up the wall", l7 + [f7, r7, m7, s7, t7, p7], Color.FromArgb(60, 240, 170, 60))
+
+    # 6: two levels joined by drawn ramps, merged into one continuous field - 560 m east
+    off6 = 560.0
+    f8, l8 = field_with_lists("whole", "people", 260, 1950)
+    f9, l9 = field_with_lists("plaza3", "people", 260, 2080)
+    f8.Hidden = f9.Hidden = True
+    tf8, tf9 = comp("transformfield", 420, 1950), comp("transformfield", 420, 2080)
+    for tf_, src_, mv in ((tf8, f8, RG.Vector3d(off6, 0, 0)),
+                          (tf9, f9, RG.Vector3d(off6, lb_.Item4 + RAMP_GAP - hb_.Item2, RAMP_RISE))):
+        tf_.Hidden = True
+        impl(tf_.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+        impl(tf_.Params.Input[1]).PersistentData.Clear()
+        impl(tf_.Params.Input[1]).PersistentData.Append(GH_Vector(mv))
+    rp6 = add(Grasshopper.Kernel.Parameters.Param_Curve(), 420, 2200)
+    rp6.NickName = "Ramps"
+    rp6.Hidden = True
+    for c_ in ramps:
+        c2 = c_.DuplicateCurve()
+        c2.Translate(RG.Vector3d(off6, 0, 0))
+        rp6.PersistentData.Append(GH_Curve(c2))
+    cf6 = comp("curvefield", 560, 2200)
+    cf6.Hidden = True
+    impl(cf6.Params.Input[0]).AddSource(rp6)
+    mg6 = comp("merge", 700, 2050)
+    mg6.Hidden = True
+    for src_ in (tf8, tf9, cf6):
+        impl(mg6.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+    s6 = comp("stream", 880, 1990)
+    impl(s6.Params.Input[0]).AddSource(impl(mg6.Params.Output[0]))
+    t6 = comp("timeline", 700, 2180)
+    p6 = comp("particles", 880, 2120)
+    impl(p6.Params.Input[0]).AddSource(impl(mg6.Params.Output[0]))
+    impl(p6.Params.Input[1]).AddSource(impl(t6.Params.Output[0]))
+    group("6  Ramps between levels: the plaza, and plaza 3 30 m north and 5 m up (Transform Field), joined by two drawn ramps "
+          "(Ramps curves -> Field from Curves) and merged into one continuous field (Merge Fields)",
+          l8 + l9 + [f8, f9, tf8, tf9, rp6, cf6, mg6, s6, t6, p6], Color.FromArgb(60, 90, 200, 230))
+
+    # 7: a folded surface - three copies hinged edge to edge: floor, 30 deg slope, wall - 700 m east
+    f10, l10 = field_with_lists("motorway5", "vehicles", 260, 2400, site="blackwall_motorway")
+    f10.Hidden = True
+    sm10 = comp("smoothfield", 400, 2400)
+    sm10.Hidden = True
+    impl(sm10.Params.Input[0]).AddSource(impl(f10.Params.Output[0]))
+    for ix, goo in ((1, GH_Number(4.0)), (2, GH_Boolean(True))):
+        impl(sm10.Params.Input[ix]).PersistentData.Clear()
+        impl(sm10.Params.Input[ix]).PersistentData.Append(goo)
+    chain7 = []
+    ends7 = [gh_chain(add, sm10, st_, 560, 2340 + 70 * i, chain7) for i, st_ in enumerate(fold_steps(700.0, fold_base))]
+    s7b = comp("stream", 1060, 2330)
+    t7b = comp("timeline", 880, 2560)
+    p7b = comp("particles", 1060, 2460)
+    for e_ in ends7:
+        impl(s7b.Params.Input[0]).AddSource(impl(e_.Params.Output[0]))
+        impl(p7b.Params.Input[0]).AddSource(impl(e_.Params.Output[0]))
+    impl(p7b.Params.Input[1]).AddSource(impl(t7b.Params.Output[0]))
+    for ix, goo in ((15, GH_String("layer")), (17, GH_Number(FOLD_JOIN))):
+        impl(p7b.Params.Input[ix]).PersistentData.Clear()
+        impl(p7b.Params.Input[ix]).PersistentData.Append(goo)
+    group("7  Folded surface: a motorway clip (Smooth Field: holes closed) three times, hinged edge to edge - floor, 30 deg "
+          "slope, wall (Move + Rotate 3D about the shared edges); vehicles carry on from one onto the next (Particles: Join 8 m)",
+          l10 + [f10, sm10] + chain7 + [s7b, t7b, p7b], Color.FromArgb(60, 230, 120, 160))
     ex.NewSolution(False)
     bad = [(o.NickName, [str(m) for m in o.RuntimeMessages(Grasshopper.Kernel.GH_RuntimeMessageLevel.Error)])
            for o in map(impl, ex.Objects) if hasattr(o, "RuntimeMessages") and

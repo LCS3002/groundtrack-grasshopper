@@ -23,14 +23,20 @@ namespace Groundtrack.Core
     /// Response 0: they take the field's velocity (POP Advect, velocity); above 0 they have
     /// inertia and reach it within about Response seconds (force). Hold keeps them on their
     /// layer's ground (1 = on it, 0 = free across it: up for flat layers, along the normal for
-    /// tilted ones). Deterministic for a seed: the state at time t is the same however you get
-    /// there, so a timeline can scrub.</summary>
+    /// tilted ones). Join: a particle leaving its field carries on onto another layer whose
+    /// ground is there or a short gap ahead (fields meeting edge to edge - a floor, a slope, a
+    /// wall - are one surface). Deterministic for a seed: the state at time t is the same however
+    /// you get there, so a timeline can scrub.</summary>
     public sealed class ParticleSystem
     {
         public List<FieldData> Fields = new List<FieldData>();
         public double Rate = 200, Life = 20, SpeedScale = 1, Noise = 0, TrailSeconds = 2, Dt = 1 / 30.0;
         public double MinConfidence = 0.0, Response = 0, Drag = 1.0, Hold = 1.0;
         public bool KeepOutside;
+        /// <summary>Hand-over distance (m): a particle leaving its field joins another layer whose
+        /// ground is within this distance - there, or across a gap ahead of it (it goes straight on
+        /// across). 0 = off: it dies, or coasts with KeepOutside.</summary>
+        public double Join = 2.0;
         public int Seed = 1;
         public readonly List<IForce> Forces = new List<IForce>();
 
@@ -55,8 +61,10 @@ namespace Groundtrack.Core
 
         public sealed class Particle
         {
-            public int Id, Layer;
+            public int Id, Layer, Joined;
             public double X, Y, Z, Vx, Vy, Vz, Ux, Uy, Uz, Age, LifeSpan, Smax, NoiseX, NoiseY, Stalled;
+            /// <summary>Metres gone straight on across a gap towards another layer (0: on a field).</summary>
+            public double Bridge;
             public readonly List<(double X, double Y, double Z)> Trail = new List<(double, double, double)>();
             public double Speed => Math.Sqrt(Vx * Vx + Vy * Vy + Vz * Vz);
             public double PlanSpeed => Math.Sqrt(Vx * Vx + Vy * Vy);
@@ -69,7 +77,7 @@ namespace Groundtrack.Core
 
         string Settings()
             => string.Join("|", Seed, Rate, Life, SpeedScale, Noise, Dt, MinConfidence, Response, Drag, Hold,
-                           KeepOutside, FieldKey, Fields.Count, Forces.Count, ForceKey);
+                           KeepOutside, Join, FieldKey, Fields.Count, Forces.Count, ForceKey);
 
         public void Reset()
         {
@@ -163,6 +171,7 @@ namespace Groundtrack.Core
         /// <summary>One step of a particle; false when it left its field (and must not).</summary>
         bool Move(Particle p)
         {
+            if (p.Bridge > 0) return Coast(p);
             var f = Fields[p.Layer];
             // the layer's frame: along its ground (U, V) and across it (N; up for flat layers)
             var (nx, ny, nz) = f.Place.Normal;
@@ -199,6 +208,7 @@ namespace Groundtrack.Core
                 double ex = p.Ux + ox, ey = p.Uy + oy, ez = p.Uz + oz;
                 double mx = p.X + (fx + ex) * Dt / 2, my = p.Y + (fy + ey) * Dt / 2, mz = p.Z + (fz + ez) * Dt / 2;
                 if (f.SampleWorld(mx, my, mz, out var m)) { fx = m.Vx * SpeedScale; fy = m.Vy * SpeedScale; fz = m.Vz * SpeedScale; }
+                else if (CanJoin) { }        // crossing the edge onto another layer: keep this velocity
                 else if (!KeepOutside) return false;
                 else { fx = 0; fy = 0; fz = 0; }
                 vx = fx + ex;
@@ -219,9 +229,25 @@ namespace Groundtrack.Core
             p.Y += vy * Dt;
             p.Z += vz * Dt;
 
-            // height above the layer's ground: Hold 1 = on it, below 1 = a spring, 0 = free
             bool now = f.SampleWorld(p.X, p.Y, p.Z, out var e);
+            if (!now && CanJoin)
+            {
+                // left its field: carry on onto another layer whose ground is right here, or across
+                // a short gap to one ahead (straight on)
+                double tx = vx + vn * nx, ty = vy + vn * ny, tz = vz + vn * nz;
+                int to = JoinTarget(p.Layer, p.X, p.Y, p.Z, tx, ty, tz, out e);
+                if (to >= 0 || Ahead(p.Layer, p.X, p.Y, p.Z, tx, ty, tz))
+                {
+                    p.Vx = tx; p.Vy = ty; p.Vz = tz;
+                    p.Age += Dt;
+                    if (to >= 0) HandOver(p, to, e);
+                    else p.Bridge = 1e-9;
+                    return true;
+                }
+            }
             if (!now && !KeepOutside) return false;
+
+            // height above the layer's ground: Hold 1 = on it, below 1 = a spring, 0 = free
             double h = now ? (p.X - e.Gx) * nx + (p.Y - e.Gy) * ny + (p.Z - e.Z) * nz : 0;
             if (Hold >= 0.999 && an == 0)
             {
@@ -240,6 +266,84 @@ namespace Groundtrack.Core
             double along = Math.Sqrt(vx * vx + vy * vy + vz * vz);
             p.Stalled = Forces.Count == 0 && along < 0.02 * Math.Max(p.Smax * f.Scale, 0.5) ? p.Stalled + Dt : 0;
             return true;
+        }
+
+        bool CanJoin => Join > 0 && Fields.Count > 1;
+
+        /// <summary>Crossing a gap between layers: straight on until another layer's ground is
+        /// reached (it joins that layer) or Join metres are used up.</summary>
+        bool Coast(Particle p)
+        {
+            p.X += p.Vx * Dt; p.Y += p.Vy * Dt; p.Z += p.Vz * Dt;
+            p.Bridge += p.Speed * Dt;
+            p.Age += Dt;
+            int to = JoinTarget(p.Layer, p.X, p.Y, p.Z, p.Vx, p.Vy, p.Vz, out var e);
+            if (to >= 0) { HandOver(p, to, e); return true; }
+            if (p.Bridge <= Join) return true;
+            p.Bridge = 0;
+            return KeepOutside;
+        }
+
+        /// <summary>Particle p joins layer `to` (e: the sample there): it takes that field's flow
+        /// (or keeps its speed along the new ground, with inertia) and sits on its ground.</summary>
+        void HandOver(Particle p, int to, Sample e)
+        {
+            p.Layer = to; p.Joined++; p.Bridge = 0;
+            var (nx, ny, nz) = Fields[to].Place.Normal;
+            double un = p.Ux * nx + p.Uy * ny + p.Uz * nz;
+            p.Ux -= un * nx; p.Uy -= un * ny; p.Uz -= un * nz;
+            if (Response <= 0)
+            {
+                p.Vx = e.Vx * SpeedScale + p.Ux; p.Vy = e.Vy * SpeedScale + p.Uy; p.Vz = e.Vz * SpeedScale + p.Uz;
+            }
+            else
+            {
+                double vn = p.Vx * nx + p.Vy * ny + p.Vz * nz;
+                p.Vx -= vn * nx; p.Vy -= vn * ny; p.Vz -= vn * nz;
+            }
+            if (Hold >= 0.999)
+            {
+                double h = (p.X - e.Gx) * nx + (p.Y - e.Gy) * ny + (p.Z - e.Z) * nz;
+                p.X -= h * nx; p.Y -= h * ny; p.Z -= h * nz;
+            }
+            p.Smax = e.Smax;
+        }
+
+        /// <summary>Another layer's ground within Join straight ahead along (vx, vy, vz)?</summary>
+        bool Ahead(int layer, double x, double y, double z, double vx, double vy, double vz)
+        {
+            double sp = Math.Sqrt(vx * vx + vy * vy + vz * vz);
+            if (sp < 1e-9) return false;
+            double step = double.MaxValue;
+            foreach (var g in Fields) step = Math.Min(step, g.WorldCell / 2);
+            step = Math.Max(step, 0.1);
+            for (double d = step; d <= Join + 1e-9; d += step)
+                if (JoinTarget(layer, x + vx / sp * d, y + vy / sp * d, z + vz / sp * d, vx, vy, vz, out _) >= 0) return true;
+            return false;
+        }
+
+        /// <summary>The layer (other than `layer`) a particle at (x, y, z) moving along (vx, vy,
+        /// vz) can join: one whose ground is within Join and whose flow carries on its way (not
+        /// against it) and on into that field; the closest. -1: none.</summary>
+        int JoinTarget(int layer, double x, double y, double z, double vx, double vy, double vz, out Sample at)
+        {
+            at = default;
+            int best = -1;
+            double bestH = Join;
+            for (int l = 0; l < Fields.Count; l++)
+            {
+                if (l == layer) continue;
+                var g = Fields[l];
+                if (!g.SampleWorld(x, y, z, out var s) || s.Speed < 1e-9) continue;
+                var (nx, ny, nz) = g.Place.Normal;
+                double h = Math.Abs((x - s.Gx) * nx + (y - s.Gy) * ny + (z - s.Z) * nz);
+                if (h >= bestH || s.Vx * vx + s.Vy * vy + s.Vz * vz <= 0) continue;
+                // a cell along its flow is still in it
+                double step = Math.Max(g.WorldCell, s.Speed * SpeedScale * Dt) / s.Speed;
+                if (!g.SampleWorld(s.Gx + s.Vx * step, s.Gy + s.Vy * step, s.Z + s.Vz * step, out _)) continue;
+                best = l; bestH = h; at = s;
+            }
+            return best;
         }
 
         double Gauss()

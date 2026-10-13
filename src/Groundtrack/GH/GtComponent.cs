@@ -16,6 +16,8 @@ namespace Groundtrack
         protected GtComponent(string name, string nick, string desc, string sub)
             : base(name, nick, desc, Tab.Name, sub) { }
 
+        public override bool Read(GH_IO.Serialization.GH_IReader reader) => Compat.Read(this, reader, r => base.Read(r));
+
         /// <summary>Coloured points, drawn as round dots (grouped by colour).</summary>
         protected readonly Dots Cloud = new Dots();
 

@@ -18,6 +18,7 @@ namespace Groundtrack.Components
                    Tab.Name, Tab.Flow) { }
 
         public override Guid ComponentGuid => new Guid("3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e504");
+        public override bool Read(GH_IO.Serialization.GH_IReader reader) => Compat.Read(this, reader, r => base.Read(r));
         protected override Bitmap Icon => Icons.Get("blend");
         public override GH_Exposure Exposure => GH_Exposure.secondary;
 

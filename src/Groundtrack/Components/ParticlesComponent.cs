@@ -48,6 +48,9 @@ namespace Groundtrack.Components
             p.AddBooleanParameter("Outside", "Out", "Keep particles that leave their field (they coast on, forces only)", GH_ParamAccess.item, false);
             p.AddTextParameter("Colour", "Col", "Colour by: speed / layer / age", GH_ParamAccess.item, "speed");
             p.AddParameter(new GradientParam(), "Gradient", "G", "Recolour (Gradient component); empty = the groundtrack ramp", GH_ParamAccess.item);
+            p.AddNumberParameter("Join", "J", "Particles leaving their field carry on onto another field (layer) whose ground is within this " +
+                                 "distance (m): fields meeting edge to edge (floor, slope, wall - tilt them with Rotate 3D) are one " +
+                                 "continuous surface. 0 = off", GH_ParamAccess.item, 2.0);
             p[1].Optional = true;
             p[5].Optional = true;
             p[10].Optional = true;
@@ -70,7 +73,7 @@ namespace Groundtrack.Components
         {
             var goos = new List<FieldGoo>();
             double t = double.NaN, rate = 300, life = double.NaN, speed = 1, noise = 0, trail = 2;
-            double response = 0, hold = 1, drag = 1;
+            double response = 0, hold = 1, drag = 1, join = 2;
             bool run = false, reset = false, outside = false;
             int seed = 1;
             string colour = "speed";
@@ -86,6 +89,7 @@ namespace Groundtrack.Components
             DA.GetData(11, ref response); DA.GetData(12, ref hold); DA.GetData(13, ref drag); DA.GetData(14, ref outside);
             DA.GetData(15, ref colour);
             DA.GetData(16, ref grad);
+            if (Params.Input.Count > 17) DA.GetData(17, ref join);
             var gradient = grad?.Value;
             if (double.IsNaN(life)) life = fields.Max(f => AutoLife(f, speed));
 
@@ -102,6 +106,7 @@ namespace Groundtrack.Components
             _sys.Noise = Math.Max(0, noise); _sys.TrailSeconds = Math.Max(0, trail); _sys.Seed = seed;
             _sys.Response = Math.Max(0, response); _sys.Hold = Math.Max(0, Math.Min(1, hold)); _sys.Drag = Math.Max(0, drag);
             _sys.KeepOutside = outside;
+            _sys.Join = Math.Max(0, join);
             _sys.Forces.Clear();
             foreach (var fg in forces) if (fg?.Value != null) _sys.Forces.Add(fg.Value);
             _sys.ForceKey = string.Join(";", _sys.Forces.Select(f => f is ForceBase b ? b.Key : f.GetHashCode().ToString()));

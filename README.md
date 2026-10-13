@@ -22,7 +22,7 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/transformfield.png) | **Transform Field** | Place a field: Rotate in degrees about its own centre, Scale, Stretch X / Y and Mirror, all in the field's own plane, then Move (Z stacks it as a layer). |
 | ![](src/Groundtrack/Icons/curvefield.png) | **Field from Curves** | Draw your own flow: it runs along the curves at Speed, fading out over Width. |
 | ![](src/Groundtrack/Icons/streamlines.png) | **Streamlines** | Evenly spaced flow lines through a field, coloured by speed. One **Density** slider. |
-| ![](src/Groundtrack/Icons/particles.png) | **Particles** | POP-like: particles are born where people or vehicles were (busier places more), follow their field, are pushed by **Forces** and die outside it. **Several fields = several layers.** Other inputs: Rate, Life, Speed, Noise, Trail, Response (inertia), Hold (stick to the layer's ground), Drag, Outside, Colour (speed / layer / age). Driven by a Timeline (scrub back and forth), or **Run**. |
+| ![](src/Groundtrack/Icons/particles.png) | **Particles** | POP-like: particles are born where people or vehicles were (busier places more), follow their field, are pushed by **Forces** and die outside it. **Several fields = several layers.** Other inputs: Rate, Life, Speed, Noise, Trail, Response (inertia), Hold (stick to the layer's ground), Drag, Outside, Colour (speed / layer / age), and **Join**: fields meeting edge to edge (a floor, a slope, a wall) become one surface, and particles carry on from one onto the next, across gaps of up to Join metres. Driven by a Timeline (scrub back and forth), or **Run**. |
 | ![](src/Groundtrack/Icons/merge.png) | **Merge Fields** | Several fields into one (sites, clips, groups). No seams: **Feather** (fade in at the edges), **Smooth**, **Fill** gaps, and **Max slope**, which turns cliffs between layers at different heights into ramps. |
 | ![](src/Groundtrack/Icons/blend.png) | **Blend Fields** | Interpolate fields, also of different sites. A **T** slider runs from the first field to the last; Weights are optional. The same seam controls as Merge. |
 | ![](src/Groundtrack/Icons/smooth.png) | **Smooth Field** | Relax a field: Radius, Fill gaps, Max slope. |
@@ -53,7 +53,7 @@ the lines and points with their colours.
      Use `net48/groundtrack.gha` instead if you start Rhino in .NET Framework mode (`/netfx`).
      If Windows blocked the download: right-click the file → Properties → Unblock.
    - **Yak package:**
-     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.2.0-rh8_0-win.yak`.
+     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.3.0-rh8_0-win.yak`.
      This picks the right build for your Rhino by itself.
 
    Use one of the two, not both: two copies make Grasshopper report a conflict.
@@ -80,13 +80,25 @@ Then try:
   as it changes.
 - **Field → Rotate 3D (about X) → Streamlines / Particles.** The field tilts or stands up, and the
   flow runs along it.
+- **Two levels joined by ramps:** a second field moved up and beside the first (Transform Field),
+  3D ramp curves between them → Field from Curves, all three → Merge Fields. One continuous flow
+  that climbs the ramps.
+- **A folded surface:** copies of a field hinged edge to edge with Move + Rotate 3D (floor, slope,
+  wall), all into Particles. With Join, particles run from one onto the next.
 
-`examples/groundtrack_example.gh` shows all of this on Reuters Plaza, in five groups side by side:
+`examples/groundtrack_example.gh` shows all of this, in seven groups side by side:
 1. Streamlines.
 2. Particles and Replay on a Timeline.
 3. Blend and Crossings.
 4. Two layers stacked 8 m apart that intertwine (Interact) and swirl (Axis Force).
 5. The plaza stood up on its south edge with Rotate 3D.
+6. Two levels joined by ramps: the plaza, and plaza 3 30 m north and 5 m up, with two drawn ramps,
+   merged into one continuous field.
+7. A folded surface: a motorway clip three times, hinged as floor, 30° slope and wall; the vehicles
+   drive from one onto the next.
+
+Groups 1–6 use Reuters Plaza; group 7 uses the Blackwall motorway (its vehicles drive straight
+through, which shows the hand-over clearly).
 
 ## Data and coordinates
 
@@ -131,7 +143,7 @@ passed all of them, on both .NET 8 and .NET Framework 4.8:
 - **Recording:** in visible Rhino, the timeline window opens, and recording 0–1 s at 30 fps writes
   31 PNG frames.
 
-Forces, layers, seams and tilting (0.2), on the same data:
+Forces, layers, seams, tilting, ramps and folds (0.2–0.3), on the same data:
 
 | Check | Result |
 |---|---|
@@ -147,6 +159,9 @@ Forces, layers, seams and tilting (0.2), on the same data:
 | Replay on a plaza rotated 50° about X vs the rotated real positions | 0 m |
 | Transform Field 30°: velocity error | 6e-14 m/s |
 | ~3000 particles with Interact + Axis Force + Obstacle | 8 ms per step (13 ms on battery) |
+| Two plaza levels 5 m apart joined by two ramps: streamline segments steeper than 2:1 / people who walk between the levels in 90 s | 0 / 431 up, 365 down |
+| Folded motorway (floor, 30° slope, wall; Join 8 m): vehicles in 90 s from the floor onto the slope / on up the wall | 11,730 / 2,765 (none with Join 0) |
+| Definitions saved with 0.1.1 and 0.2.0 | open without messages, wires kept |
 
 ## Build
 

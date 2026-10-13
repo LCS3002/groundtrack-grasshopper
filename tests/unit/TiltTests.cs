@@ -114,6 +114,74 @@ namespace Groundtrack.Tests
                 }
         }
 
+        /// <summary>A floor flowing north and, hinged at its north edge, the same field tilted up 30
+        /// degrees (flowing north = up the slope, or back down with back = true).</summary>
+        static (FieldData Floor, FieldData Slope) Fold(bool back = false, double gap = 0)
+        {
+            var floor = Uniform(20, 20, 1.0, 0.0, 1.0);
+            var slope = Uniform(20, 20, 1.0, 0.0, back ? -1.0 : 1.0);
+            slope.Place = slope.Place.Then(new double[,] { { 1, 0, 0, 0 }, { 0, 1, 0, 20 + gap }, { 0, 0, 1, 0 } })
+                                     .Then(RotX(30, 19.5 + gap, 0));
+            return (floor, slope);
+        }
+
+        [Fact]
+        public void Particles_cross_a_gap_shorter_than_Join_to_the_next_field()
+        {
+            var (floor, slope) = Fold(gap: 3);
+            int Up(double join)
+            {
+                var ps = new ParticleSystem { Rate = 100, Life = 60, Seed = 2, Join = join };
+                ps.Fields.Add(floor); ps.Fields.Add(slope);
+                ps.StepTo(30);
+                foreach (var p in ps.Alive.Where(q => q.Joined > 0))
+                {
+                    Assert.Equal(1, p.Layer);
+                    Assert.True(slope.SampleWorld(p.X, p.Y, p.Z, out var s));
+                    Assert.Equal(s.Z, p.Z, 6);                                  // on the slope's ground
+                }
+                Assert.DoesNotContain(ps.Alive, q => q.Bridge > join + 0.1);  // none drift on further
+                return ps.Alive.Count(q => q.Joined > 0);
+            }
+            Assert.Equal(0, Up(2));                   // 3 m gap, 2 m reach: they stop at the edge
+            Assert.True(Up(5) > 50);                  // 5 m reach: across and up the slope
+        }
+
+        [Fact]
+        public void Particles_carry_on_from_a_floor_up_a_slope_hinged_to_it()
+        {
+            var (floor, slope) = Fold();
+            var ps = new ParticleSystem { Rate = 100, Life = 60, Seed = 2 };
+            ps.Fields.Add(floor); ps.Fields.Add(slope);
+            ps.StepTo(30);
+            var up = ps.Alive.Where(p => p.Joined > 0).ToList();
+            Assert.True(up.Count > 50, $"{up.Count} particles went up the slope");
+            var (nx, ny, nz) = slope.Place.Normal;
+            var (ox, oy, oz) = slope.Place.Apply(0, 0, 0);
+            foreach (var p in up)
+            {
+                Assert.Equal(1, p.Layer);
+                Assert.Equal(1.0, p.Speed, 6);
+                Assert.Equal(0, (p.X - ox) * nx + (p.Y - oy) * ny + (p.Z - oz) * nz, 6);   // on the slope
+                Assert.True(p.Z > 0);
+            }
+            // off: they stop at the edge
+            var off = new ParticleSystem { Rate = 100, Life = 60, Seed = 2, Join = 0 };
+            off.Fields.Add(floor); off.Fields.Add(slope);
+            off.StepTo(30);
+            Assert.DoesNotContain(off.Alive, p => p.Joined > 0);
+        }
+
+        [Fact]
+        public void Particles_do_not_join_a_field_whose_flow_leads_straight_back()
+        {
+            var (floor, slope) = Fold(back: true);      // the slope flows down onto the floor
+            var ps = new ParticleSystem { Rate = 100, Life = 60, Seed = 2 };
+            ps.Fields.Add(floor); ps.Fields.Add(slope);
+            ps.StepTo(30);
+            Assert.DoesNotContain(ps.Alive, p => p.Layer == 1 && p.Joined > 0);
+        }
+
         [Fact]
         public void Blending_a_tilted_field_with_itself_gives_it_back()
         {
