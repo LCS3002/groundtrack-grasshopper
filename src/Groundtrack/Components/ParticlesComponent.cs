@@ -9,13 +9,15 @@ using ParticleSystem = Groundtrack.Core.ParticleSystem;
 
 namespace Groundtrack.Components
 {
-    /// <summary>A particle simulation through a field, like a Houdini POP network. With a Time
-    /// input (Timeline) it is a function of time: scrub back and forth. Without, Run plays it.</summary>
+    /// <summary>A particle simulation through one or more fields (layers), like a Houdini POP
+    /// network, with forces. With a Time input (Timeline) it is a function of time: scrub back
+    /// and forth. Without, Run plays it.</summary>
     public class ParticlesComponent : GtComponent
     {
         public ParticlesComponent()
             : base("Particles", "POP",
-                   "Particles born where people / vehicles were (busier places more), following the field, dying outside it. " +
+                   "Particles born where people / vehicles were (busier places more), following their field and pushed by Forces. " +
+                   "Several fields = several layers (stack them with Move Z; Interact makes layers pull on each other). " +
                    "Connect a Timeline to Time (scrub / play / record), or use Run.", Tab.Flow) { }
 
         public override Guid ComponentGuid => new Guid("3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e503");
@@ -29,18 +31,27 @@ namespace Groundtrack.Components
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new FieldParam(), "Field", "F", "A field", GH_ParamAccess.item);
+            p.AddParameter(new FieldParam(), "Fields", "F", "One or more fields: each is a layer with its own particles", GH_ParamAccess.list);
             p.AddNumberParameter("Time", "T", "Time (s) - connect a Timeline; empty: Run plays in real time", GH_ParamAccess.item);
             p.AddBooleanParameter("Run", "Run", "Play (when Time is empty)", GH_ParamAccess.item, false);
             p.AddBooleanParameter("Reset", "Rst", "Back to the start", GH_ParamAccess.item, false);
-            p.AddNumberParameter("Rate", "R", "Births per second", GH_ParamAccess.item, 300);
+            p.AddNumberParameter("Rate", "R", "Births per second (per layer)", GH_ParamAccess.item, 300);
             p.AddNumberParameter("Life", "L", "Life (s); empty: long enough to cross the field", GH_ParamAccess.item);
             p.AddNumberParameter("Speed", "Sp", "Speed factor (1 = as measured)", GH_ParamAccess.item, 1.0);
             p.AddNumberParameter("Noise", "N", "Wandering 0..1 (share of the local speed)", GH_ParamAccess.item, 0.0);
             p.AddNumberParameter("Trail", "Tr", "Trail length (s)", GH_ParamAccess.item, 2.0);
             p.AddIntegerParameter("Seed", "Seed", "Random seed", GH_ParamAccess.item, 1);
+            p.AddParameter(new ForceParam(), "Forces", "Frc", "Forces (Force, Axis Force, Attract, Curve Force, Field Force, Interact, Obstacle) - plug in any number", GH_ParamAccess.list);
+            p.AddNumberParameter("Response", "Rs", "0 = take the field's velocity (follow exactly); > 0 = inertia: reach it within about this many seconds (forces bend the flow more)", GH_ParamAccess.item, 0.0);
+            p.AddNumberParameter("Hold", "H", "Keep to the layer's ground: 1 = on it, 0.2 = loosely, 0 = free in Z", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Drag", "D", "How fast pushes from forces die out (1/s)", GH_ParamAccess.item, 1.0);
+            p.AddBooleanParameter("Outside", "Out", "Keep particles that leave their field (they coast on, forces only)", GH_ParamAccess.item, false);
+            p.AddTextParameter("Colour", "Col", "Colour by: speed / layer / age", GH_ParamAccess.item, "speed");
+            p.AddParameter(new GradientParam(), "Gradient", "G", "Recolour (Gradient component); empty = the groundtrack ramp", GH_ParamAccess.item);
             p[1].Optional = true;
             p[5].Optional = true;
+            p[10].Optional = true;
+            p[16].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -48,39 +59,52 @@ namespace Groundtrack.Components
             p.AddPointParameter("Points", "P", "Particle positions", GH_ParamAccess.list);
             p.AddVectorParameter("Velocity", "V", "Particle velocities (m/s)", GH_ParamAccess.list);
             p.AddNumberParameter("Speed", "Sp", "Particle speeds (m/s)", GH_ParamAccess.list);
-            p.AddColourParameter("Colour", "Col", "Speed colours", GH_ParamAccess.list);
+            p.AddColourParameter("Colour", "Col", "Their colours", GH_ParamAccess.list);
             p.AddCurveParameter("Trails", "Tr", "One line per particle (its last seconds)", GH_ParamAccess.list);
             p.AddNumberParameter("Age", "A", "Particle ages (s)", GH_ParamAccess.list);
             p.AddNumberParameter("Time", "T", "The simulation time (s)", GH_ParamAccess.item);
+            p.AddIntegerParameter("Layer", "Ly", "Which field each particle belongs to", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            FieldGoo g = null;
+            var goos = new List<FieldGoo>();
             double t = double.NaN, rate = 300, life = double.NaN, speed = 1, noise = 0, trail = 2;
-            bool run = false, reset = false;
+            double response = 0, hold = 1, drag = 1;
+            bool run = false, reset = false, outside = false;
             int seed = 1;
-            if (!DA.GetData(0, ref g) || g?.Value == null) return;
+            string colour = "speed";
+            GradientGoo grad = null;
+            var forces = new List<ForceGoo>();
+            if (!DA.GetDataList(0, goos)) return;
+            var fields = goos.Where(g => g?.Value != null).Select(g => g.Value).ToList();
+            if (fields.Count == 0) return;
             bool timed = DA.GetData(1, ref t);
-            DA.GetData(2, ref run);
-            DA.GetData(3, ref reset);
-            DA.GetData(4, ref rate);
-            DA.GetData(5, ref life);
-            DA.GetData(6, ref speed);
-            DA.GetData(7, ref noise);
-            DA.GetData(8, ref trail);
-            DA.GetData(9, ref seed);
-            var f = g.Value;
-            if (double.IsNaN(life)) life = AutoLife(f, speed);
+            DA.GetData(2, ref run); DA.GetData(3, ref reset); DA.GetData(4, ref rate); DA.GetData(5, ref life);
+            DA.GetData(6, ref speed); DA.GetData(7, ref noise); DA.GetData(8, ref trail); DA.GetData(9, ref seed);
+            DA.GetDataList(10, forces);
+            DA.GetData(11, ref response); DA.GetData(12, ref hold); DA.GetData(13, ref drag); DA.GetData(14, ref outside);
+            DA.GetData(15, ref colour);
+            DA.GetData(16, ref grad);
+            var gradient = grad?.Value;
+            if (double.IsNaN(life)) life = fields.Max(f => AutoLife(f, speed));
 
-            // the same field in a new time slice keeps its particles; another field restarts
-            string key = $"{f.Source}|{f.Clip}|{f.Group}|{f.Place.A00},{f.Place.A01},{f.Place.A10},{f.Place.A11},{f.Place.Tx},{f.Place.Ty},{f.Place.Tz}|{f.Valid}";
-            if (!double.IsNaN(f.TimeStart)) key = key.Substring(0, key.LastIndexOf('|'));
-            if (_sys == null) _sys = new ParticleSystem(f);
-            _sys.Field = f;
+            // the same fields in a new time slice keep their particles; others restart
+            string key = string.Join(";", fields.Select(f =>
+            {
+                string k = $"{f.Source}|{f.Clip}|{f.Group}|{f.Place.Key}";
+                return double.IsNaN(f.TimeStart) ? k + $"|{f.Valid}" : k;
+            }));
+            if (_sys == null) _sys = new ParticleSystem();
+            _sys.Fields = fields;
             _sys.FieldKey = key;
             _sys.Rate = Math.Max(0, rate); _sys.Life = Math.Max(0.1, life); _sys.SpeedScale = speed;
             _sys.Noise = Math.Max(0, noise); _sys.TrailSeconds = Math.Max(0, trail); _sys.Seed = seed;
+            _sys.Response = Math.Max(0, response); _sys.Hold = Math.Max(0, Math.Min(1, hold)); _sys.Drag = Math.Max(0, drag);
+            _sys.KeepOutside = outside;
+            _sys.Forces.Clear();
+            foreach (var fg in forces) if (fg?.Value != null) _sys.Forces.Add(fg.Value);
+            _sys.ForceKey = string.Join(";", _sys.Forces.Select(f => f is ForceBase b ? b.Key : f.GetHashCode().ToString()));
 
             if (timed)
                 _sys.StepTo(Math.Max(0, t));
@@ -98,30 +122,36 @@ namespace Groundtrack.Components
                 _sys.StepTo(_clock);
             }
 
+            string mode = (colour ?? "").Trim().ToLowerInvariant();
             var pts = new List<Point3d>();
             var vel = new List<Vector3d>();
             var spd = new List<double>();
             var col = new List<Color>();
             var trails = new List<Curve>();
             var age = new List<double>();
-            double scale = Math.Max(f.Scale, 1e-9);
+            var layer = new List<int>();
             foreach (var p in _sys.Alive)
             {
+                var f = fields[p.Layer];
+                double scale = Math.Max(f.Scale, 1e-9);
                 var pt = new Point3d(p.X, p.Y, p.Z);
                 double sp = p.Speed / scale;
-                var c = Preview.SpeedColour(sp, p.Smax);
+                Color c;
+                if (mode.StartsWith("l")) c = Preview.LayerColour(p.Layer, fields.Count, gradient);
+                else if (mode.StartsWith("a")) c = Preview.Colour(p.Age / Math.Max(p.LifeSpan, 1e-9), gradient);
+                else c = Preview.SpeedColour(sp, p.Smax, gradient);
                 pts.Add(pt);
-                vel.Add(new Vector3d(p.Vx, p.Vy, 0));
+                vel.Add(new Vector3d(p.Vx, p.Vy, p.Vz));
                 spd.Add(sp);
                 col.Add(c);
                 age.Add(p.Age);
+                layer.Add(p.Layer);
                 Cloud.Add(pt, c);
                 if (p.Trail.Count >= 2)
                 {
                     var tp = p.Trail.Select(q => new Point3d(q.X, q.Y, q.Z)).ToList();
                     trails.Add(new PolylineCurve(tp));
-                    var q2 = Preview.Quantise(sp / Math.Max(p.Smax, 1e-9));
-                    for (int k = 1; k < tp.Count; k++) Buckets.Add(new Line(tp[k - 1], tp[k]), q2);
+                    for (int k = 1; k < tp.Count; k++) Buckets.Add(new Line(tp[k - 1], tp[k]), c);
                     BakeCurves.Add(trails[trails.Count - 1]);
                     BakeColours.Add(c);
                 }
@@ -135,7 +165,8 @@ namespace Groundtrack.Components
             DA.SetDataList(4, trails);
             DA.SetDataList(5, age);
             DA.SetData(6, _sys.Time);
-            Message = $"{pts.Count} particles\n{_sys.Time:0.0} s";
+            DA.SetDataList(7, layer);
+            Message = $"{pts.Count} particles" + (fields.Count > 1 ? $", {fields.Count} layers" : "") + $"\n{_sys.Time:0.0} s";
         }
 
         /// <summary>Long enough to cross the field at its typical speed (4..40 s).</summary>

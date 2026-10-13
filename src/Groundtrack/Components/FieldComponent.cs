@@ -117,9 +117,9 @@ namespace Groundtrack.Components
             {
                 if (!f.Has[k]) continue;
                 var (x, y, z) = f.CellWorld(k);
-                var (vx, vy) = f.CellVelocity(k);
+                var (vx, vy, vz) = f.CellVelocity(k);
                 pts.Add(new Point3d(x, y, z));
-                vec.Add(new Vector3d(vx, vy, 0));
+                vec.Add(new Vector3d(vx, vy, vz));
                 spd.Add(f.Speed[k]);
                 den.Add(f.Density[k]);
                 col.Add(Preview.SpeedColour(f.Speed[k], f.Smax[k]));

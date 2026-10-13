@@ -27,8 +27,10 @@ namespace Groundtrack.Components
             p.AddCurveParameter("A", "A", "Curves (streamlines, trails, tracks ...)", GH_ParamAccess.list);
             p.AddCurveParameter("B", "B", "Curves; empty = A with itself", GH_ParamAccess.list);
             p.AddNumberParameter("Cell", "C", "Heat map cell (m); empty = automatic", GH_ParamAccess.item);
+            p.AddParameter(new GradientParam(), "Gradient", "G", "Recolour the heat map (Gradient component); empty = purple to yellow", GH_ParamAccess.item);
             p[1].Optional = true;
             p[2].Optional = true;
+            p[3].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -49,15 +51,17 @@ namespace Groundtrack.Components
             if (!DA.GetDataList(0, ca)) return;
             bool self = !DA.GetDataList(1, cb) || cb.Count == 0;
             DA.GetData(2, ref cell);
-            var a = ca.Select(Poly).ToList();
-            var b = self ? null : cb.Select(Poly).ToList();
+            GradientGoo grad = null;
+            DA.GetData(3, ref grad);
+            var a = ca.Select(c => Geo.Poly(c)).ToList();
+            var b = self ? null : cb.Select(c => Geo.Poly(c)).ToList();
             var hits = Crossings.Find(a, b);
             var heat = Crossings.Map(hits, cell);
             var pts = hits.Select(h => new Point3d(h.X, h.Y, h.Z)).ToList();
             foreach (var p in pts) Cloud.Add(p, Color.White);
             BakePts.AddRange(pts);
             BakePtColours.AddRange(pts.Select(_ => Color.White));
-            var mesh = HeatMesh(heat, pts.Count > 0 ? pts.Average(p => p.Z) : 0);
+            var mesh = HeatMesh(heat, pts.Count > 0 ? pts.Average(p => p.Z) : 0, grad?.Value);
             if (mesh != null) Meshes.Add(mesh);
             DA.SetDataList(0, pts);
             DA.SetDataList(1, hits.Select(h => h.Angle));
@@ -68,26 +72,9 @@ namespace Groundtrack.Components
             Message = $"{hits.Count} crossings";
         }
 
-        /// <summary>A curve as a list of points (polylines as they are, others divided ~0.25 m).</summary>
-        static IList<(double X, double Y, double Z)> Poly(Curve c)
-        {
-            var res = new List<(double, double, double)>();
-            if (c == null) return res;
-            if (c.TryGetPolyline(out Polyline pl))
-                foreach (var p in pl) res.Add((p.X, p.Y, p.Z));
-            else
-            {
-                double len = c.GetLength();
-                int n = Math.Max(2, Math.Min(5000, (int)Math.Ceiling(len / 0.25)));
-                var ts = c.DivideByCount(n, true);
-                if (ts != null) foreach (var t in ts) { var p = c.PointAt(t); res.Add((p.X, p.Y, p.Z)); }
-            }
-            return res;
-        }
-
         /// <summary>The heat grid as a smooth mesh (shared vertices, colours blend), only where
         /// there is heat; purple (few crossings) to yellow (most).</summary>
-        static Mesh HeatMesh(Crossings.Heat h, double z)
+        static Mesh HeatMesh(Crossings.Heat h, double z, Gradient gradient)
         {
             if (h.Value == null || h.Value.Length == 0) return null;
             int vx = h.Nx + 1, vy = h.Ny + 1;
@@ -116,7 +103,7 @@ namespace Groundtrack.Components
                 if (index[k] < 0)
                 {
                     index[k] = m.Vertices.Add(h.X0 + i * h.Cell, h.Y0 + j * h.Cell, z - 0.05);
-                    m.VertexColors.Add(Preview.HeatColour(0.3 + 0.7 * val[k]));
+                    m.VertexColors.Add(gradient == null ? Preview.HeatColour(0.3 + 0.7 * val[k]) : Preview.Colour(val[k], gradient));
                 }
                 return index[k];
             }

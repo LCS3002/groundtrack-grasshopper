@@ -84,3 +84,87 @@ for (x0, y0), (x1, y1), t in zip(pts, pts[1:], (0.1, 0.35, 0.6, 0.85)):
 d.ellipse([12 * S, 7 * S, 18 * S, 13 * S], fill=INK)
 save(im, "replay")
 print(sorted(p.name for p in OUT.iterdir()))
+
+# ---- forces, merge, curve field, gradient (0.2)
+im, d = canvas()                                   # force: arrows pushing one way + wiggle
+for k, y in enumerate((6, 12, 18)):
+    arrow(d, 3, y, 19, y - 2, ramp(0.2 + 0.3 * k), 2)
+save(im, "force")
+
+im, d = canvas()                                   # axis force: axis + swirl
+d.line([(12 * S, 2 * S), (12 * S, 22 * S)], fill=INK, width=2 * S)
+d.arc([3 * S, 7 * S, 21 * S, 17 * S], 200, 520, fill=ramp(0.15), width=2 * S)
+arrow(d, 19, 9, 20, 10, ramp(0.15), 2)
+save(im, "axis")
+
+im, d = canvas()                                   # attract: arrows into a point
+for a in range(0, 360, 60):
+    x, y = 12 + 10 * math.cos(math.radians(a)), 12 + 10 * math.sin(math.radians(a))
+    arrow(d, x, y, 12 + 4.5 * math.cos(math.radians(a)), 12 + 4.5 * math.sin(math.radians(a)), ramp(a / 360), 1)
+d.ellipse([9 * S, 9 * S, 15 * S, 15 * S], fill=INK)
+save(im, "attract")
+
+im, d = canvas()                                   # curve force: a curve + arrows along it
+pts = [(x * S, (12 + 6 * math.sin(x / 4)) * S) for x in [1 + 0.5 * n for n in range(45)]]
+d.line(pts, fill=INK, width=2 * S, joint="curve")
+for x in (5, 12, 19):
+    y = 12 + 6 * math.sin(x / 4)
+    arrow(d, x, y - 4, x + 3, y - 4 + 6 * math.cos(x / 4) * 0.75, ramp(0.8), 1)
+save(im, "curveforce")
+
+im, d = canvas()                                   # field force: field arrows bending a path
+for j, y in enumerate((5, 12, 19)):
+    for i, x in enumerate((4, 12)):
+        arrow(d, x, y, x + 4, y - 2, ramp(0.3 + 0.2 * i), 1)
+d.line([(2 * S, 22 * S), (10 * S, 16 * S), (22 * S, 8 * S)], fill=ramp(0.9), width=2 * S)
+save(im, "fieldforce")
+
+im, d = canvas()                                   # interact: two strands intertwining
+for k, c in enumerate((ramp(0.1), (255, 60, 190, 255))):
+    pts = [(x * S, (12 + 6 * math.sin(x / 3 + k * math.pi)) * S) for x in [1 + 0.5 * n for n in range(45)]]
+    d.line(pts, fill=c, width=2 * S, joint="curve")
+save(im, "interact")
+
+im, d = canvas()                                   # obstacle: block + flow around
+d.rectangle([9 * S, 8 * S, 15 * S, 16 * S], fill=(120, 120, 128, 255))
+for y, bend in ((5, -1), (12, 0), (19, 1)):
+    pts = [(x * S, (y + (bend * 3 if 7 <= x <= 17 else 0) - (4 if y == 12 and 6 <= x <= 18 else 0)) * S) for x in range(1, 24)]
+    d.line(pts, fill=ramp(0.3 + 0.2 * (y / 19)), width=S + 2)
+save(im, "obstacle")
+
+im, d = canvas()                                   # merge: three fields into one
+for k, c in enumerate((ramp(0.1), ramp(0.5), ramp(0.9))):
+    d.ellipse([(2 + 4 * k) * S, (2 + 3 * k) * S, (12 + 4 * k) * S, (12 + 3 * k) * S], fill=c[:3] + (170,))
+arrow(d, 15, 17, 21, 21, INK, 2)
+save(im, "merge")
+
+im, d = canvas()                                   # curve field: a drawn curve with arrows beside it
+pts = [(x * S, (14 - 5 * math.sin(x / 5)) * S) for x in [1 + 0.5 * n for n in range(45)]]
+d.line(pts, fill=INK, width=S + 1, joint="curve")
+for x in (4, 10, 16):
+    for off in (-5, 5):
+        y = 14 - 5 * math.sin(x / 5) + off
+        arrow(d, x, y, x + 4, y - 5 * (math.sin((x + 4) / 5) - math.sin(x / 5)), ramp(0.6), 1)
+save(im, "curvefield")
+
+im, d = canvas()                                   # gradient: a colour bar
+for x in range(2, 22):
+    d.rectangle([x * S, 6 * S, (x + 1) * S, 18 * S], fill=ramp((x - 2) / 19))
+d.rectangle([2 * S, 6 * S, 22 * S, 18 * S], outline=INK, width=S)
+save(im, "gradient")
+print("icons:", len(list(OUT.iterdir())))
+
+# ---- transform field, smooth field (0.2)
+im, d = canvas()                                   # transform field: a field square turned, with a turn arrow
+d.polygon([(12 * S, 3 * S), (21 * S, 12 * S), (12 * S, 21 * S), (3 * S, 12 * S)], outline=INK, width=S + 1)
+for x0, y0 in ((8, 12), (12, 8), (12, 16), (16, 12)):
+    arrow(d, x0 - 1.5, y0 + 1.5, x0 + 1.5, y0 - 1.5, ramp(0.2 + 0.03 * x0), 1)
+d.arc([1 * S, 1 * S, 23 * S, 23 * S], 290, 350, fill=(255, 60, 190, 255), width=2 * S)
+save(im, "transformfield")
+
+im, d = canvas()                                   # smooth: jagged line -> smooth line
+d.line([(2 * S, 8 * S), (6 * S, 3 * S), (10 * S, 9 * S), (14 * S, 3 * S), (18 * S, 9 * S), (22 * S, 4 * S)], fill=(150, 150, 155, 255), width=S + 1)
+pts = [(x * S, (17 + 3 * math.sin(x / 3.2)) * S) for x in [2 + 0.5 * n for n in range(41)]]
+d.line(pts, fill=ramp(0.15), width=2 * S, joint="curve")
+save(im, "smooth")
+print("icons:", len(list(OUT.iterdir())))

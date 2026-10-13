@@ -16,10 +16,23 @@ namespace Groundtrack
     {
         public const int Buckets = 48;
 
-        public static Color SpeedColour(double speed, double top)
+        public static Color SpeedColour(double speed, double top, Gradient gradient = null)
+            => Colour(speed / Math.Max(top, 1e-9), gradient);
+
+        /// <summary>t (0..1) through a gradient (default: the groundtrack speed ramp).</summary>
+        public static Color Colour(double t, Gradient gradient = null)
         {
-            var (r, g, b) = Ramp.Speed(speed, top);
+            var (r, g, b) = gradient == null ? Ramp.At(t) : gradient.At(t);
             return Color.FromArgb(r, g, b);
+        }
+
+        /// <summary>Distinct colours for layers 0..n-1 (from a gradient if given).</summary>
+        public static Color LayerColour(int layer, int n, Gradient gradient = null)
+        {
+            if (gradient != null) return Colour(n <= 1 ? 0.5 : layer / (double)(n - 1), gradient);
+            Color[] c = { Color.FromArgb(40, 130, 255), Color.FromArgb(255, 60, 190), Color.FromArgb(250, 170, 30),
+                          Color.FromArgb(40, 200, 120), Color.FromArgb(150, 90, 255), Color.FromArgb(240, 70, 50) };
+            return c[((layer % c.Length) + c.Length) % c.Length];
         }
 
         public static Color HeatColour(double t)
@@ -41,12 +54,12 @@ namespace Groundtrack
             }
 
             /// <summary>A polyline coloured per segment by speed / top speed.</summary>
-            public void AddPolyline(IList<Point3d> pts, IList<double> speed, double top)
+            public void AddPolyline(IList<Point3d> pts, IList<double> speed, double top, Gradient gradient = null)
             {
                 for (int k = 1; k < pts.Count; k++)
                 {
                     double s = speed == null ? 0 : 0.5 * (speed[k - 1] + speed[k]);
-                    Add(new Line(pts[k - 1], pts[k]), Quantise(s / Math.Max(top, 1e-9)));
+                    Add(new Line(pts[k - 1], pts[k]), Quantise(s / Math.Max(top, 1e-9), gradient));
                 }
             }
 
@@ -54,11 +67,10 @@ namespace Groundtrack
                 => _b.Values.Select(v => (v.Lines.ToArray(), v.Colour)).ToList();
         }
 
-        public static Color Quantise(double t)
+        public static Color Quantise(double t, Gradient gradient = null)
         {
             t = Math.Max(0, Math.Min(1, double.IsNaN(t) ? 0 : t));
-            var (r, g, b) = Ramp.At(Math.Round(t * (Buckets - 1)) / (Buckets - 1));
-            return Color.FromArgb(r, g, b);
+            return Colour(Math.Round(t * (Buckets - 1)) / (Buckets - 1), gradient);
         }
 
         public static void Draw(IGH_PreviewArgs args, List<(Line[] Lines, Color Colour)> lines, int thickness)

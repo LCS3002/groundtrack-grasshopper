@@ -37,14 +37,7 @@ namespace Groundtrack
         static BoundingBox Box(FieldData f)
         {
             if (f == null || f.Valid == 0) return BoundingBox.Empty;
-            var (x0, y0, x1, y1) = f.Bounds();
-            double z0 = double.MaxValue, z1 = double.MinValue;
-            for (int k = 0; k < f.Count; k++)
-                if (f.Has[k])
-                {
-                    var (_, _, z) = f.CellWorld(k);
-                    z0 = Math.Min(z0, z); z1 = Math.Max(z1, z);
-                }
+            var (x0, y0, z0, x1, y1, z1) = f.WorldBox();
             return new BoundingBox(x0, y0, z0, x1, y1, z1);
         }
 
@@ -52,9 +45,11 @@ namespace Groundtrack
         {
             if (Value == null) return null;
             var f = Value.Clone();
-            // the plan part of the transform: rotations about Z, scales, mirrors, moves
-            var p = new Placement(x.M00, x.M01, x.M10, x.M11, x.M03, x.M13, x.M22, x.M23);
-            f.Place = f.Place.Then(p);
+            // plan transforms stay plan placements; tilting ones (Rotate about X / Y, Rotate 3D,
+            // Orient to a vertical plane) tilt the field's plane, its flow along with it
+            var m = new double[3, 4];
+            for (int i = 0; i < 3; i++) for (int j = 0; j < 4; j++) m[i, j] = x[i, j];
+            f.Place = f.Place.Then(m);
             return new FieldGoo(f);
         }
 
@@ -103,18 +98,20 @@ namespace Groundtrack
                     int k = j * f.Nx + i;
                     if (!f.Has[k]) continue;
                     var (x, y, z) = f.CellWorld(k);
-                    var (vx, vy) = f.CellVelocity(k);
-                    double sp = Math.Sqrt(vx * vx + vy * vy);
+                    var (vx, vy, vz) = f.CellVelocity(k);
+                    double sp = Math.Sqrt(vx * vx + vy * vy + vz * vz);
                     if (sp < 1e-6) continue;
                     double top = Math.Max(f.Smax[k] * f.Scale, 1e-6);
                     double len = cell * stride * 0.9 * Math.Min(1, 0.35 + sp / top);
-                    var a = new Point3d(x - vx / sp * len / 2, y - vy / sp * len / 2, z);
-                    var b = new Point3d(x + vx / sp * len / 2, y + vy / sp * len / 2, z);
+                    var u = new Vector3d(vx / sp, vy / sp, vz / sp);
+                    var a = new Point3d(x, y, z) - u * len / 2;
+                    var b = new Point3d(x, y, z) + u * len / 2;
                     var c = Preview.SpeedColour(sp / f.Scale, f.Smax[k]);
                     buckets.Add(new Line(a, b), c);
-                    // arrow head
-                    var d = new Vector3d(vx / sp, vy / sp, 0) * len * 0.3;
-                    var side = new Vector3d(-d.Y, d.X, 0) * 0.5;
+                    // arrow head, in the field's plane
+                    var d = u * len * 0.3;
+                    var (nx, ny, nz) = f.Place.Normal;
+                    var side = Vector3d.CrossProduct(new Vector3d(nx, ny, nz), d) * 0.5;
                     buckets.Add(new Line(b, b - d + side), c);
                     buckets.Add(new Line(b, b - d - side), c);
                 }

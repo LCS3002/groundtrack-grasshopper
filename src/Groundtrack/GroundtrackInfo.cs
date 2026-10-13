@@ -13,7 +13,7 @@ namespace Groundtrack
         public override Guid Id => new Guid("6c1f4c2e-2d7a-4a59-9a43-6a0b2f1d3e21");
         public override string AuthorName => "groundtrack";
         public override string AuthorContact => "https://github.com/LCS3002/groundtrack-grasshopper";
-        public override string Version => "0.1.1";
+        public override string Version => "0.2.0";
     }
 
     /// <summary>The tab and its panels.</summary>
@@ -22,7 +22,9 @@ namespace Groundtrack
         public const string Name = "groundtrack";
         public const string Data = "1 Data";
         public const string Flow = "2 Flow";
-        public const string Analyse = "3 Analyse";
-        public const string Time = "4 Time";
+        public const string Forces = "3 Forces";
+        public const string Analyse = "4 Analyse";
+        public const string Time = "5 Time";
+        public const string Colour = "6 Colour";
     }
 }

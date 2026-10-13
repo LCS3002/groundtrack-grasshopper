@@ -26,6 +26,10 @@ namespace Groundtrack.Components
             p.AddParameter(new FieldParam(), "Fields", "F", "Two or more fields", GH_ParamAccess.list);
             p.AddNumberParameter("T", "T", "0..1: from the first field to the last (empty: all equal)", GH_ParamAccess.item);
             p.AddNumberParameter("Weights", "W", "Optional: one weight per field (overrides T)", GH_ParamAccess.list);
+            p.AddNumberParameter("Feather", "Fe", "Each field fades in over this many metres from its edge: soft overlaps, no seams or height jumps (0 = hard)", GH_ParamAccess.item, 4.0);
+            p.AddNumberParameter("Smooth", "Sm", "Smooth the result over this many metres (0 = off)", GH_ParamAccess.item, 1.5);
+            p.AddBooleanParameter("Fill", "Fill", "Close small gaps between the fields while smoothing", GH_ParamAccess.item, false);
+            p.AddNumberParameter("Max slope", "MS", "Steepest the ground may get (rise per run; 1 = 45 deg): cliffs where fields at different heights meet become ramps (0 = off)", GH_ParamAccess.item, 1.0);
             p[1].Optional = true;
             p[2].Optional = true;
         }
@@ -47,7 +51,12 @@ namespace Groundtrack.Components
             bool hasT = DA.GetData(1, ref t);
             bool hasW = DA.GetDataList(2, weights) && weights.Count > 0;
             var w = Weights(fields.Count, hasW ? weights : null, hasT ? t : double.NaN);
-            var f = Blend.Mix(fields, w);
+            double feather = 4, smooth = 1.5;
+            bool fill = false;
+            double maxSlope = 1;
+            DA.GetData(3, ref feather); DA.GetData(4, ref smooth); DA.GetData(5, ref fill); DA.GetData(6, ref maxSlope);
+            var f = Blend.Mix(fields, w, feather: Math.Max(0, feather), smooth: Math.Max(0, smooth), fill: fill,
+                              maxSlope: Math.Max(0, maxSlope));
             DA.SetData(0, new FieldGoo(f));
             DA.SetDataList(1, w);
             Message = fields.Count == 1 ? "1 field" : string.Join(" / ", w.Select(x => x.ToString("0.##")));

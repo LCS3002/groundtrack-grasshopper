@@ -29,7 +29,9 @@ namespace Groundtrack.Components
             p.AddNumberParameter("Time", "T", "Time (s) - connect a Timeline", GH_ParamAccess.item, 0.0);
             p.AddNumberParameter("Tail", "Tl", "Trail length (s)", GH_ParamAccess.item, 3.0);
             p.AddTextParameter("Group", "G", "Only this group (people, vehicles ...); empty = the field's group", GH_ParamAccess.item);
+            p.AddParameter(new GradientParam(), "Gradient", "Grad", "Recolour (Gradient component); empty = the groundtrack ramp", GH_ParamAccess.item);
             p[3].Optional = true;
+            p[4].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -52,6 +54,9 @@ namespace Groundtrack.Components
             DA.GetData(1, ref t);
             DA.GetData(2, ref tail);
             DA.GetData(3, ref group);
+            GradientGoo grad = null;
+            DA.GetData(4, ref grad);
+            var gradient = grad?.Value;
             var f = g.Value;
             if (string.IsNullOrEmpty(f.TracksPath) || !File.Exists(f.TracksPath))
             {
@@ -77,10 +82,10 @@ namespace Groundtrack.Components
             foreach (var s in tr.At(t, gi))
             {
                 var (x, y, z) = pl.Apply(s.X, s.Y, s.Z);
-                var (vx, vy) = pl.ApplyVector(s.Vx, s.Vy);
-                var c = Preview.SpeedColour(s.Speed, s.Top);
+                var (vx, vy, vz) = pl.ApplyVector3(s.Vx, s.Vy);
+                var c = Preview.SpeedColour(s.Speed, s.Top, gradient);
                 pts.Add(new Point3d(x, y, z));
-                vel.Add(new Vector3d(vx, vy, 0));
+                vel.Add(new Vector3d(vx, vy, vz));
                 spd.Add(s.Speed);
                 col.Add(c);
                 ids.Add(s.Id);
@@ -92,7 +97,7 @@ namespace Groundtrack.Components
                     {
                         var tp = path.Select(q => { var (a, b, cz) = pl.Apply(q.X, q.Y, q.Z); return new Point3d(a, b, cz); }).ToList();
                         trails.Add(new PolylineCurve(tp));
-                        Buckets.AddPolyline(tp, path.Select(q => q.Speed).ToList(), s.Top);
+                        Buckets.AddPolyline(tp, path.Select(q => q.Speed).ToList(), s.Top, gradient);
                         BakeCurves.Add(trails[trails.Count - 1]);
                         BakeColours.Add(c);
                     }

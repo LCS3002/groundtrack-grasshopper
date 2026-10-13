@@ -25,7 +25,9 @@ namespace Groundtrack.Components
             p.AddNumberParameter("Density", "D", "0..1: how close the lines are (0.5: about 3 cells apart)", GH_ParamAccess.item, 0.5);
             p.AddNumberParameter("Min length", "L", "Shortest line kept (m); empty = 3x the spacing", GH_ParamAccess.item);
             p.AddNumberParameter("Min confidence", "C", "Ignore cells less supported than this (0..1)", GH_ParamAccess.item, 0.05);
+            p.AddParameter(new GradientParam(), "Gradient", "G", "Recolour (Gradient component); empty = the groundtrack ramp", GH_ParamAccess.item);
             p[2].Optional = true;
+            p[4].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -44,6 +46,9 @@ namespace Groundtrack.Components
             DA.GetData(1, ref density);
             DA.GetData(2, ref minLen);
             DA.GetData(3, ref minConf);
+            GradientGoo grad = null;
+            DA.GetData(4, ref grad);
+            var gradient = grad?.Value;
             var f = g.Value;
             density = Math.Max(0.01, Math.Min(1, density));
             double spacing = f.WorldCell * (6.0 - 5.0 * density);
@@ -58,9 +63,9 @@ namespace Groundtrack.Components
                 curves.Add(new PolylineCurve(pts));
                 double mean = sp.Average();
                 speeds.Add(mean);
-                var c = Preview.SpeedColour(mean, l.Smax);
+                var c = Preview.SpeedColour(mean, l.Smax, gradient);
                 colours.Add(c);
-                Buckets.AddPolyline(pts, sp, l.Smax);
+                Buckets.AddPolyline(pts, sp, l.Smax, gradient);
             }
             BakeCurves.AddRange(curves);
             BakeColours.AddRange(colours);

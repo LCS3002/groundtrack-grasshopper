@@ -46,10 +46,11 @@ namespace Groundtrack.Core
             // seeds: cell centres, busiest first
             var seeds = Enumerable.Range(0, f.Count).Where(k => f.Has[k] && f.Confidence[k] >= minConfidence)
                                   .OrderByDescending(k => f.Density[k]).ToList();
+            // traced in the field's plane (= world for flat fields), tilted into place at the end
             foreach (int k in seeds)
             {
                 if (lines.Count >= maxLines) break;
-                var (sx, sy, _) = f.CellWorld(k);
+                var (sx, sy, _) = f.CellPlane(k);
                 if (grid.Near(sx, sy, spacing, -1)) continue;
                 int id = lines.Count;
                 var fwd = Walk(f, sx, sy, step, +1, grid, test, minConfidence, id);
@@ -62,6 +63,10 @@ namespace Groundtrack.Core
                 for (int p = 0; p < line.Count; p++) grid.Add(line.X[p], line.Y[p], id);
                 lines.Add(line);
             }
+            if (f.Place.Tilted)
+                foreach (var l in lines)
+                    for (int p = 0; p < l.Count; p++)
+                        (l.X[p], l.Y[p], l.Z[p]) = f.Place.ToWorld(l.X[p], l.Y[p], l.Z[p]);
             return lines;
         }
 
