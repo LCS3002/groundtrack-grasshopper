@@ -1,0 +1,154 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using Grasshopper.Kernel;
+using Groundtrack.Core;
+using Rhino.Geometry;
+using ParticleSystem = Groundtrack.Core.ParticleSystem;
+
+namespace Groundtrack.Components
+{
+    /// <summary>A particle simulation through a field, like a Houdini POP network. With a Time
+    /// input (Timeline) it is a function of time: scrub back and forth. Without, Run plays it.</summary>
+    public class ParticlesComponent : GtComponent
+    {
+        public ParticlesComponent()
+            : base("Particles", "POP",
+                   "Particles born where people / vehicles were (busier places more), following the field, dying outside it. " +
+                   "Connect a Timeline to Time (scrub / play / record), or use Run.", Tab.Flow) { }
+
+        public override Guid ComponentGuid => new Guid("3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e503");
+        protected override Bitmap Icon => Icons.Get("particles");
+        public override GH_Exposure Exposure => GH_Exposure.primary;
+        protected override float PointSize => 3;
+
+        ParticleSystem _sys;
+        double _clock;
+        DateTime _lastTick = DateTime.MinValue;
+
+        protected override void RegisterInputParams(GH_InputParamManager p)
+        {
+            p.AddParameter(new FieldParam(), "Field", "F", "A field", GH_ParamAccess.item);
+            p.AddNumberParameter("Time", "T", "Time (s) - connect a Timeline; empty: Run plays in real time", GH_ParamAccess.item);
+            p.AddBooleanParameter("Run", "Run", "Play (when Time is empty)", GH_ParamAccess.item, false);
+            p.AddBooleanParameter("Reset", "Rst", "Back to the start", GH_ParamAccess.item, false);
+            p.AddNumberParameter("Rate", "R", "Births per second", GH_ParamAccess.item, 300);
+            p.AddNumberParameter("Life", "L", "Life (s); empty: long enough to cross the field", GH_ParamAccess.item);
+            p.AddNumberParameter("Speed", "Sp", "Speed factor (1 = as measured)", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Noise", "N", "Wandering 0..1 (share of the local speed)", GH_ParamAccess.item, 0.0);
+            p.AddNumberParameter("Trail", "Tr", "Trail length (s)", GH_ParamAccess.item, 2.0);
+            p.AddIntegerParameter("Seed", "Seed", "Random seed", GH_ParamAccess.item, 1);
+            p[1].Optional = true;
+            p[5].Optional = true;
+        }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p)
+        {
+            p.AddPointParameter("Points", "P", "Particle positions", GH_ParamAccess.list);
+            p.AddVectorParameter("Velocity", "V", "Particle velocities (m/s)", GH_ParamAccess.list);
+            p.AddNumberParameter("Speed", "Sp", "Particle speeds (m/s)", GH_ParamAccess.list);
+            p.AddColourParameter("Colour", "Col", "Speed colours", GH_ParamAccess.list);
+            p.AddCurveParameter("Trails", "Tr", "One line per particle (its last seconds)", GH_ParamAccess.list);
+            p.AddNumberParameter("Age", "A", "Particle ages (s)", GH_ParamAccess.list);
+            p.AddNumberParameter("Time", "T", "The simulation time (s)", GH_ParamAccess.item);
+        }
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            FieldGoo g = null;
+            double t = double.NaN, rate = 300, life = double.NaN, speed = 1, noise = 0, trail = 2;
+            bool run = false, reset = false;
+            int seed = 1;
+            if (!DA.GetData(0, ref g) || g?.Value == null) return;
+            bool timed = DA.GetData(1, ref t);
+            DA.GetData(2, ref run);
+            DA.GetData(3, ref reset);
+            DA.GetData(4, ref rate);
+            DA.GetData(5, ref life);
+            DA.GetData(6, ref speed);
+            DA.GetData(7, ref noise);
+            DA.GetData(8, ref trail);
+            DA.GetData(9, ref seed);
+            var f = g.Value;
+            if (double.IsNaN(life)) life = AutoLife(f, speed);
+
+            // the same field in a new time slice keeps its particles; another field restarts
+            string key = $"{f.Source}|{f.Clip}|{f.Group}|{f.Place.A00},{f.Place.A01},{f.Place.A10},{f.Place.A11},{f.Place.Tx},{f.Place.Ty},{f.Place.Tz}|{f.Valid}";
+            if (!double.IsNaN(f.TimeStart)) key = key.Substring(0, key.LastIndexOf('|'));
+            if (_sys == null) _sys = new ParticleSystem(f);
+            _sys.Field = f;
+            _sys.FieldKey = key;
+            _sys.Rate = Math.Max(0, rate); _sys.Life = Math.Max(0.1, life); _sys.SpeedScale = speed;
+            _sys.Noise = Math.Max(0, noise); _sys.TrailSeconds = Math.Max(0, trail); _sys.Seed = seed;
+
+            if (timed)
+                _sys.StepTo(Math.Max(0, t));
+            else
+            {
+                if (reset) { _clock = 0; _sys.Reset(); }
+                if (run)
+                {
+                    var now = DateTime.Now;
+                    if (_lastTick != DateTime.MinValue) _clock += Math.Min((now - _lastTick).TotalSeconds, 0.25);
+                    _lastTick = now;
+                    OnPingDocument()?.ScheduleSolution(20, d => ExpireSolution(false));
+                }
+                else _lastTick = DateTime.MinValue;
+                _sys.StepTo(_clock);
+            }
+
+            var pts = new List<Point3d>();
+            var vel = new List<Vector3d>();
+            var spd = new List<double>();
+            var col = new List<Color>();
+            var trails = new List<Curve>();
+            var age = new List<double>();
+            double scale = Math.Max(f.Scale, 1e-9);
+            foreach (var p in _sys.Alive)
+            {
+                var pt = new Point3d(p.X, p.Y, p.Z);
+                double sp = p.Speed / scale;
+                var c = Preview.SpeedColour(sp, p.Smax);
+                pts.Add(pt);
+                vel.Add(new Vector3d(p.Vx, p.Vy, 0));
+                spd.Add(sp);
+                col.Add(c);
+                age.Add(p.Age);
+                Cloud.Add(pt, c);
+                if (p.Trail.Count >= 2)
+                {
+                    var tp = p.Trail.Select(q => new Point3d(q.X, q.Y, q.Z)).ToList();
+                    trails.Add(new PolylineCurve(tp));
+                    var q2 = Preview.Quantise(sp / Math.Max(p.Smax, 1e-9));
+                    for (int k = 1; k < tp.Count; k++) Buckets.Add(new Line(tp[k - 1], tp[k]), q2);
+                    BakeCurves.Add(trails[trails.Count - 1]);
+                    BakeColours.Add(c);
+                }
+            }
+            BakePts.AddRange(pts);
+            BakePtColours.AddRange(col);
+            DA.SetDataList(0, pts);
+            DA.SetDataList(1, vel);
+            DA.SetDataList(2, spd);
+            DA.SetDataList(3, col);
+            DA.SetDataList(4, trails);
+            DA.SetDataList(5, age);
+            DA.SetData(6, _sys.Time);
+            Message = $"{pts.Count} particles\n{_sys.Time:0.0} s";
+        }
+
+        /// <summary>Long enough to cross the field at its typical speed (4..40 s).</summary>
+        static double AutoLife(FieldData f, double speedScale)
+        {
+            var (x0, y0, x1, y1) = f.Bounds();
+            double span = Math.Max(x1 - x0, y1 - y0);
+            var sp = new List<double>();
+            for (int k = 0; k < f.Count; k++) if (f.Has[k]) sp.Add(f.Speed[k]);
+            if (sp.Count == 0) return 10;
+            sp.Sort();
+            double med = Math.Max(sp[sp.Count / 2] * f.Scale * Math.Abs(speedScale), 0.2);
+            return Math.Max(4, Math.Min(40, 1.2 * span / med));
+        }
+    }
+}

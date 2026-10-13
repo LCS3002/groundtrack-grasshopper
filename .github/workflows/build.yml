@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build the plugin (.NET 7 / 8 and .NET Framework 4.8)
+        run: dotnet build src/Groundtrack -c Release
+      - name: Unit tests (the maths, without Rhino)
+        run: dotnet test tests/unit -c Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: groundtrack-gha
+          path: |
+            src/Groundtrack/bin/Release/net7.0-windows/groundtrack.gha
+            src/Groundtrack/bin/Release/net48/groundtrack.gha

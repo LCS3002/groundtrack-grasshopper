@@ -1,0 +1,9 @@
+bin/
+obj/
+dist/
+*.user
+.vs/
+__pycache__/
+*.ghx
+*.gh.bak
+TestResults/
