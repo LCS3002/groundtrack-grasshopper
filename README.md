@@ -1,8 +1,9 @@
 # groundtrack for Grasshopper
 
 Movement data in Grasshopper (Rhino 8): flow fields, streamlines, a particle system like Houdini's
-POP network (with forces, layers and collisions), merging and blending, fields bent and lofted into
-3D landscapes, crossings and cuts, replay of the real tracks, and a timeline with recording.
+POP network (with forces, layers and collisions), merging and blending, fields bent, lofted, fused and sculpted into
+3D landscapes, crossings and cuts, replay of the real tracks, a timeline with recording, and export to Houdini as a
+force field for POPs.
 
 **Quick guide:** [docs/GUIDE.md](docs/GUIDE.md). It covers every node, the Houdini POP
 equivalents, and recipes.
@@ -32,6 +33,9 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/landscape.png) | **Landscape** | Shape a field's ground: Soften rolls steps into hills, Relief raises it where it is busiest or fastest, Ground drapes it over a surface or mesh you model. |
 | ![](src/Groundtrack/Icons/loft.png) | **Loft Fields** | Stacked layers joined at their edges by rounded folds, the flow blending from one layer into the next: one continuous landscape (All → Particles / Streamlines). |
 | ![](src/Groundtrack/Icons/bridge.png) | **Bridge** | Swooping ribbons between fields: automatic (where one flow leaves and another comes in) or along curves you draw. |
+| ![](src/Groundtrack/Icons/sculpt.png) | **Sculpt Field** | Terrain shaping: press areas (closed curves), valleys / ridges (open curves) or hollows / hills (points) into the ground, soft-edged; Downhill turns the flow down the new slopes. |
+| ![](src/Groundtrack/Icons/fuse.png) | **Fuse Fields** | Fields fuse like blobs where their edges come within Reach: only the near sides join, fuller the closer they are, the flow blending across. |
+| ![](src/Groundtrack/Icons/connect.png) | **Connect Fields** | The same join, only where you draw (areas, or along curves): stacked or neighbouring fields continue smoothly into each other. |
 | ![](src/Groundtrack/Icons/surface.png) | **Field Surface** | A field's ground as a mesh coloured by speed, and its outlines as smooth curves (also bent fields, folds, bridges). |
 | ![](src/Groundtrack/Icons/force.png) | **Force** | POP Force: a constant push plus turbulence. |
 | ![](src/Groundtrack/Icons/axis.png) | **Axis Force** | POP Axis Force: orbit around an axis, suck towards it, lift along it. |
@@ -45,6 +49,7 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/intersect.png) | **Intersect Fields** | Where layers cut through each other (like intersecting planes): the cut lines and the angle between the two flows along them. |
 | ![](src/Groundtrack/Icons/timeline.png) | **Timeline** | One clock (seconds) for Particles, Replay and time-sliced Fields. Double-click it to open the timeline window: play / pause, scrub, speed, loop, in / out, and **Record**, which saves the Rhino viewport as a PNG sequence. |
 | ![](src/Groundtrack/Icons/replay.png) | **Replay** | The real tracks at time T: everyone's position and trail, coloured by speed. It follows its field when you move or tilt it. |
+| ![](src/Groundtrack/Icons/export.png) | **Houdini Export** | Fields to Houdini as a force field for POPs: a groundtrack Houdini kit whose combined velocity volume drives a POP simulation (Update Force or Update Velocity), the volume as .vdb, the cells as .geo. One line for Houdini's Python Shell builds the scene. |
 | ![](src/Groundtrack/Icons/gradient.png) | **Gradient** | Recolour: presets (groundtrack, inferno, viridis, magma, greys, white-pink, blue-red, mono) or your own colours. Plug into Streamlines / Particles / Replay / Crossings. |
 
 Every force has a **Layers** input that makes it act on chosen layers only, so you can mix and
@@ -62,7 +67,7 @@ the lines and points with their colours.
      Use `net48/groundtrack.gha` instead if you start Rhino in .NET Framework mode (`/netfx`).
      If Windows blocked the download: right-click the file → Properties → Unblock.
    - **Yak package:**
-     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.4.0-rh8_0-win.yak`.
+     `"C:\Program Files\Rhino 8\System\Yak.exe" install groundtrack-0.5.0-rh8_0-win.yak`.
      This picks the right build for your Rhino by itself.
 
    Use one of the two, not both: two copies make Grasshopper report a conflict.
@@ -95,10 +100,14 @@ Then try:
 - **A folded surface:** copies of a field hinged edge to edge with Move + Rotate 3D (floor, slope,
   wall), all into Particles. With Join, particles run from one onto the next.
 - **A landscape:** stack fields (Transform Field, Move Z), bend some (Warp Field, or Grasshopper's
-  morphs), join them at their edges (Loft Fields) or with ribbons (Bridge), then All → Particles /
-  Streamlines / Field Surface.
+  morphs), sculpt their ground (Sculpt Field, Landscape), join them at their edges (Loft Fields, Fuse
+  Fields, Connect Fields) or with ribbons (Bridge), then All → Particles / Streamlines / Field Surface.
+- **To Houdini:** All → Houdini Export (Export = true), paste its Houdini line into Houdini's Python
+  Shell: the fields are one velocity volume pushing a POP simulation.
+- **Thicker lines:** the Width input on Streamlines / Particles / Replay / Crossings / Field Surface;
+  the Timeline window's Size records at up to 4x the viewport, lines scaled with it.
 
-`examples/groundtrack_example.gh` shows all of this, in nine groups side by side:
+`examples/groundtrack_example.gh` shows all of this, in ten groups side by side:
 1. Streamlines.
 2. Particles and Replay on a Timeline.
 3. Blend and Crossings.
@@ -112,6 +121,8 @@ Then try:
    edges by rounded folds.
 9. Bend, bridge, cut: plaza 3 bent up 60° and joined to the plaza by automatic ribbons; a copy
    tilted 35° cutting the plaza.
+10. Fuse, sculpt, Houdini: a hollow pressed into the plaza, fused with plaza 3 beside it where they
+    come close, ready for Houdini Export.
 
 Group 7 uses the Blackwall motorway (its vehicles drive straight through, which shows the hand-over
 clearly); the others use Reuters Plaza.
@@ -159,7 +170,7 @@ passed all of them, on both .NET 8 and .NET Framework 4.8:
 - **Recording:** in visible Rhino, the timeline window opens, and recording 0–1 s at 30 fps writes
   31 PNG frames.
 
-Forces, layers, seams, tilting, ramps, folds and 3D shaping (0.2–0.4), on the same data:
+Forces, layers, seams, tilting, ramps, folds, 3D shaping and joins (0.2–0.5), on the same data:
 
 | Check | Result |
 |---|---|

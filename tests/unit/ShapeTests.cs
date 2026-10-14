@@ -218,6 +218,19 @@ namespace Groundtrack.Tests
         }
 
         [Fact]
+        public void Saturation_makes_gradients_punchier_and_1_leaves_them()
+        {
+            var g = Gradient.Preset("groundtrack");
+            Assert.Same(g, g.Adjusted(1, 1));
+            double Sat((byte R, byte G, byte B) c) { double mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B)); return mx > 0 ? (mx - mn) / mx : 0; }
+            var h = g.Adjusted(1.6, 1);
+            for (double t = 0; t <= 1; t += 0.1)
+                Assert.True(Sat(h.At(t)) >= Sat(g.At(t)) - 1e-9);
+            Assert.True(Sat(h.At(0.5)) > Sat(g.At(0.5)) + 0.1);
+            Assert.Equal("vivid", Gradient.Preset("vivid").Name);
+        }
+
+        [Fact]
         public void A_ribbon_runs_along_its_curve()
         {
             var curve = Enumerable.Range(0, 41).Select(i => (X: i * 0.5, Y: 0.0, Z: Math.Sin(i * 0.5 / 20 * Math.PI) * 5)).ToList();

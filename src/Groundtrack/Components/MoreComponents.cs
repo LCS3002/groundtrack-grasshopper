@@ -99,8 +99,9 @@ namespace Groundtrack.Components
     {
         public GradientComponent()
             : base("Gradient", "Grad",
-                   "Recolour: a preset (groundtrack, inferno, viridis, magma, greys, white-pink, blue-red, mono) or your own colours " +
-                   "(evenly spaced, or at Positions 0..1). Plug into the Gradient input of Streamlines, Particles, Replay or Crossings.",
+                   "Recolour: a preset (groundtrack, vivid, inferno, viridis, magma, greys, white-pink, blue-red, mono) or your own " +
+                   "colours (evenly spaced, or at Positions 0..1); Saturation / Brightness make them punchier. Plug into the Gradient " +
+                   "input of Streamlines, Particles, Replay, Crossings or Field Surface.",
                    Tab.Name, Tab.Colour) { }
 
         public override Guid ComponentGuid => new Guid("3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e510");
@@ -114,6 +115,8 @@ namespace Groundtrack.Components
             p.AddColourParameter("Colours", "C", "Your own colours (override the preset)", GH_ParamAccess.list);
             p.AddNumberParameter("Positions", "T", "Where each colour sits (0..1); empty = evenly", GH_ParamAccess.list);
             p.AddBooleanParameter("Reverse", "R", "Flip it", GH_ParamAccess.item, false);
+            p.AddNumberParameter("Saturation", "Sat", "x the colours' saturation (1 = as is; 1.3-1.8 = punchier, e.g. for exported images)", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Brightness", "Br", "x the colours' brightness (1 = as is)", GH_ParamAccess.item, 1.0);
             p[1].Optional = true;
             p[2].Optional = true;
         }
@@ -134,10 +137,13 @@ namespace Groundtrack.Components
             DA.GetDataList(1, cols);
             DA.GetDataList(2, pos);
             DA.GetData(3, ref rev);
+            double sat = 1, bright = 1;
+            if (Params.Input.Count > 5) { DA.GetData(4, ref sat); DA.GetData(5, ref bright); }
             var g = cols.Count > 0
                 ? Gradient.FromColours(cols.Select(c => (c.R, c.G, c.B)).ToList(), pos.Count == cols.Count ? pos : null)
                 : Gradient.Preset(preset);
             if (rev) g = g.Reversed();
+            g = g.Adjusted(Math.Max(0, sat), Math.Max(0, bright));
             DA.SetData(0, new GradientGoo(g));
             DA.SetDataList(1, Enumerable.Range(0, 11).Select(k => Preview.Colour(k / 10.0, g)));
             Message = cols.Count > 0 ? "custom" : g.Name;

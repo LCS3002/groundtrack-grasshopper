@@ -1289,7 +1289,7 @@ fz_b0 = field_comp("reuters_plaza", "plaza3", "people", 5400, 100)
 fz_b = emit("transformfield", 5500, 100)
 wire(fz_b0, 0, fz_b, 0)
 impl(fz_b.Params.Input[1]).PersistentData.Clear()
-impl(fz_b.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(52.0, 0, 4.0)))
+impl(fz_b.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(40.0, 0, 4.0)))
 fu = emit("fuse", 5700, 50)
 impl(fu.Params.Input[0]).AddSource(impl(fz_a.Params.Output[0]))
 impl(fu.Params.Input[0]).AddSource(impl(fz_b.Params.Output[0]))
@@ -1312,7 +1312,7 @@ for t_ in range(1, 121):
         reached_f[p_.Id] = reached_f.get(p_.Id, set()) | {p_.Layer}
 onto_f = sum(1 for i_ in first if first[i_] in (0, 1) and any(l_ >= 2 for l_ in reached_f[i_]))
 across_f = sum(1 for i_ in first if first[i_] in (0, 1) and {0, 1} <= reached_f[i_])
-check("Fuse Fields: the plaza and plaza 3 (52 m east, 4 m up) fuse on their facing sides only",
+check("Fuse Fields: the plaza and plaza 3 (40 m east, 4 m up) fuse on their facing sides only",
       len(fusions) >= 1 and all(f_.Warped for f_ in fusions) and all(x0 > fa_box.Item1 + 10 and x1 < fb_box.Item4 - 10 for x0, x1 in spans)
       and onto_f > 20 and across_f > 0,
       f"{len(fusions)} fusions spanning x {[(round(x0), round(x1)) for x0, x1 in spans]} (plaza x {fa_box.Item1:.0f}..{fa_box.Item4:.0f}, "
@@ -1325,9 +1325,10 @@ check("Fuse Fields: out of reach, no fusion", len(out(fu, 0)) == 0, f"Reach 3 m:
 cn = emit("connect", 5700, 200)
 impl(cn.Params.Input[0]).AddSource(impl(fz_a.Params.Output[0]))
 impl(cn.Params.Input[0]).AddSource(impl(fz_b.Params.Output[0]))
-area = RG.Polyline([RG.Point3d(fa_box.Item4 - 20, fa_box.Item2 - 5, 0), RG.Point3d(fb_box.Item1 + 20, fa_box.Item2 - 5, 0),
-                    RG.Point3d(fb_box.Item1 + 20, (fa_box.Item2 + fa_box.Item5) / 2, 0), RG.Point3d(fa_box.Item4 - 20, (fa_box.Item2 + fa_box.Item5) / 2, 0),
-                    RG.Point3d(fa_box.Item4 - 20, fa_box.Item2 - 5, 0)])
+area = RG.Polyline()
+for q_ in ((fa_box.Item4 - 20, fa_box.Item2 - 5), (fb_box.Item1 + 20, fa_box.Item2 - 5), (fb_box.Item1 + 20, (fa_box.Item2 + fa_box.Item5) / 2),
+           (fa_box.Item4 - 20, (fa_box.Item2 + fa_box.Item5) / 2), (fa_box.Item4 - 20, fa_box.Item2 - 5)):
+    area.Add(RG.Point3d(q_[0], q_[1], 0))
 impl(cn.Params.Input[1]).PersistentData.Append(GH_Curve(RG.PolylineCurve(area)))
 solve()
 joins = [g_.Value for g_ in out(cn, 0)]
@@ -1719,7 +1720,7 @@ if args.example:
     f14, l14 = field_with_lists("plaza3", "people", 260, 3830)
     f13.Hidden = f14.Hidden = True
     tf13, tf14 = comp("transformfield", 420, 3700), comp("transformfield", 420, 3830)
-    for tf_, src_, mv in ((tf13, f13, RG.Vector3d(off10, 0, 0)), (tf14, f14, RG.Vector3d(off10 + 52.0, 0, 4.0))):
+    for tf_, src_, mv in ((tf13, f13, RG.Vector3d(off10, 0, 0)), (tf14, f14, RG.Vector3d(off10 + 40.0, 0, 4.0))):
         tf_.Hidden = True
         impl(tf_.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
         impl(tf_.Params.Input[1]).PersistentData.Clear()

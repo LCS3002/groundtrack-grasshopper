@@ -31,13 +31,17 @@ namespace Groundtrack.Core
             return new Gradient(stops);
         }
 
-        public static readonly string[] Presets = { "groundtrack", "inferno", "viridis", "magma", "greys", "white-pink", "blue-red", "mono" };
+        public static readonly string[] Presets = { "groundtrack", "vivid", "inferno", "viridis", "magma", "greys", "white-pink", "blue-red", "mono" };
 
         public static Gradient Preset(string name)
         {
             (double, double, double, double)[] s;
             switch ((name ?? "").Trim().ToLowerInvariant())
             {
+                case "vivid":         // the groundtrack order (slow blue ... fast red), at full saturation
+                    s = new[] { (0.0, 20.0, 40.0, 255.0), (0.2, 0.0, 170.0, 255.0), (0.4, 0.0, 240.0, 120.0), (0.6, 200.0, 255.0, 0.0),
+                                (0.8, 255.0, 120.0, 0.0), (1.0, 235.0, 0.0, 40.0) };
+                    break;
                 case "inferno":
                     s = new[] { (0.0, 0.0, 0.0, 4.0), (0.25, 87.0, 16.0, 110.0), (0.5, 188.0, 55.0, 84.0), (0.75, 249.0, 142.0, 9.0), (1.0, 252.0, 255.0, 164.0) };
                     break;
@@ -72,6 +76,30 @@ namespace Groundtrack.Core
         }
 
         public Gradient Reversed() => new Gradient(Stops.Select(s => (1 - s.T, s.R, s.G, s.B))) { Name = Name + " reversed" };
+
+        /// <summary>The same gradient with saturation x `saturation` and brightness x `brightness`
+        /// (HSV; 1 = unchanged): punchier colours for exported images.</summary>
+        public Gradient Adjusted(double saturation, double brightness)
+        {
+            if (Math.Abs(saturation - 1) < 1e-9 && Math.Abs(brightness - 1) < 1e-9) return this;
+            return new Gradient(Stops.Select(st =>
+            {
+                double r = st.R / 255, g = st.G / 255, b = st.B / 255;
+                double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), v = max, d = max - min;
+                double sat = max > 1e-12 ? d / max : 0, h = 0;
+                if (d > 1e-12)
+                {
+                    if (max == r) h = ((g - b) / d + 6) % 6;
+                    else if (max == g) h = (b - r) / d + 2;
+                    else h = (r - g) / d + 4;
+                }
+                sat = Math.Max(0, Math.Min(1, sat * saturation));
+                v = Math.Max(0, Math.Min(1, v * brightness));
+                double c = v * sat, x = c * (1 - Math.Abs(h % 2 - 1)), m = v - c;
+                (double R, double G, double B) rgb = h < 1 ? (c, x, 0) : h < 2 ? (x, c, 0) : h < 3 ? (0, c, x) : h < 4 ? (0, x, c) : h < 5 ? (x, 0, c) : (c, 0, x);
+                return (st.T, (rgb.R + m) * 255, (rgb.G + m) * 255, (rgb.B + m) * 255);
+            })) { Name = Name };
+        }
 
         public (byte R, byte G, byte B) At(double t)
         {

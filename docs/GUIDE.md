@@ -1,11 +1,11 @@
-# groundtrack for Grasshopper — quick guide (0.4)
+# groundtrack for Grasshopper — quick guide (0.5)
 
 ## Install / update
 - **Installed:** `%APPDATA%\Grasshopper\Libraries\groundtrack\groundtrack.gha`.
 - **To update:** close Rhino, then replace that file.
 - **Keep one copy only.** A second copy (for example the .yak package as well) makes Grasshopper report a conflict.
 - **"Package not found" popup:** the plugin isn't loaded in that Rhino. Ignore the package server and install as above.
-- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 9 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up, levels joined by ramps, a folded surface, a lofted landscape, bend + bridge + cut.
+- **Example file:** `GROUNDTRACK RESULTS\06_grasshopper\groundtrack_example.gh`. It has 10 groups side by side: streamlines, particles + replay, blend + crossings, layers + forces, a field stood up, levels joined by ramps, a folded surface, a lofted landscape, bend + bridge + cut, fuse + sculpt + Houdini.
 
 ## Data
 - **Field** finds `GROUNDTRACK RESULTS` by itself. Its **Site / Clip / Group** dropdowns appear when you place it.
@@ -29,6 +29,9 @@
 | Shape | **Landscape** | Soften (rolls steps into hills), Relief (higher where busy / fast), Ground (drape onto your surface / mesh, + Offset). |
 | Shape | **Loft Fields** | Stacked layers joined at their edges by rounded folds; Start / End = which part of the outline; Swing = how far the folds bulge. |
 | Shape | **Bridge** | Ribbons between fields: automatic (Count per pair, Reach) or along your Curves; Width, Swing. |
+| Shape | **Sculpt Field** | Terrain: press Areas (closed curves), valleys / ridges (open curves, Width) or Points (Radius) down (Height < 0) or up; Falloff = soft edge; Downhill = flow runs down the slopes. |
+| Shape | **Fuse Fields** | Blob join: fields fuse where their edges come within Reach — only the near sides. |
+| Shape | **Connect Fields** | The same join, only where you draw (Where: areas / curves). Looks like the fields themselves. |
 | Shape | **Field Surface** | The ground as a coloured mesh + smooth outline curves. |
 | Forces | **Force** | Constant push plus turbulence (Noise, Scale, Speed). |
 | Forces | **Axis Force** | Swirl around an axis (Orbit), suck in (Suction), lift (Lift). |
@@ -42,6 +45,7 @@
 | Analyse | **Intersect Fields** | Where layers cut through each other: cut lines + flow angle. |
 | Time | **Timeline** | The clock. **Double-click** for the window: play, scrub, speed, loop, in/out, **Record** (PNGs). |
 | Time | **Replay** | The real people/vehicles at time T, with trails. |
+| Export | **Houdini Export** | Fields → Houdini POP kit: one velocity volume as a force field (Mode force / velocity, Air resistance), .vdb + .geo. Export = true, then paste the Houdini line into Houdini's Python Shell. |
 | Colour | **Gradient** | Recolour with presets or your own colours. Plug into the Gradient input of Streamlines/Particles/Replay/Crossings. |
 
 ## Houdini POP → here
@@ -105,6 +109,11 @@
     - Loft's / Bridge's **All** → Particles (Join 2) / Streamlines / Field Surface. Bake → render.
 19. **Bend the flow, not the shape:** forces → **Apply Forces** → Streamlines (swirls, detours round massing).
 20. **Where layers cut:** tilted or warped layers → **Intersect Fields** → cut lines (plane intersections), flow angle along them.
+21. **Blob joins:** stacked or neighbouring fields → **Fuse Fields** (Reach = how close before they join) → All → Particles (Join 2) / Streamlines.
+22. **Joins where you want them:** draw areas or curves → **Connect Fields** (Where) → All.
+23. **Terrain:** **Sculpt Field**: Points (hollows / hills), open curves (valleys / ridges), closed curves (areas); Downhill 0.5–1 so the flow runs into the hollows.
+24. **To Houdini (force field for POPs):** All → **Houdini Export** → Export = true → paste the Houdini line into Houdini's Python Shell (Windows > Python Shell). In your own POP network: POP Advect by Volumes → SOP path /obj/combined/OUT_FIELD (or the .vdb), field **vel**, Update Force + Air Resistance.
+25. **Thicker export images:** Width input (2–4) on the drawing nodes; Timeline window **Size** 2–4x for Record.
 
 ## Particles settings
 | Input | Meaning | Try |
