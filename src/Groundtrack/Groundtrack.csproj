@@ -7,7 +7,7 @@
     <TargetExt>.gha</TargetExt>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Title>groundtrack</Title>
     <Description>Movement fields, streamlines, particles, crossings and a timeline for Grasshopper</Description>
     <EnableDynamicLoading>true</EnableDynamicLoading>

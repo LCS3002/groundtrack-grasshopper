@@ -20,7 +20,8 @@ namespace Groundtrack.Components
                    "them combined into one velocity volume (vel) with a POP simulation running through it (Mode: force = the " +
                    "field pushes the particles, POP Advect by Volumes 'Update Force'; velocity = they follow it exactly), the " +
                    "volume also as a .vdb; and all cells as a .geo (P, v, Cd, density, speed) for your own setups. Paste the " +
-                   "Houdini line into Houdini's Python Shell to build the scene.",
+                   "Houdini line into Houdini's Python Shell: it adds all this to the open scene, in one subnet, and " +
+                   "touches nothing else.",
                    Tab.Name, Tab.Export) { }
 
         public override Guid ComponentGuid => new Guid("3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e530");
@@ -42,7 +43,7 @@ namespace Groundtrack.Components
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
             p.AddTextParameter("Folder", "Dir", "The kit folder", GH_ParamAccess.item);
-            p.AddTextParameter("Houdini", "H", "Paste into Houdini's Python Shell (Windows > Python Shell): builds the scene with the POP simulation", GH_ParamAccess.item);
+            p.AddTextParameter("Houdini", "H", "Paste into Houdini's Python Shell (Windows > Python Shell): adds the field and its POP simulation to the open scene (subnet /obj/groundtrack_<Name>)", GH_ParamAccess.item);
             p.AddTextParameter("Files", "Fi", "The files written", GH_ParamAccess.list);
         }
 
@@ -74,7 +75,8 @@ namespace Groundtrack.Components
             }
         }
 
-        static string Safe(string s) => new string(s.Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_').ToArray());
+        // ASCII letters, digits and _ : the same name Houdini gets (/obj/groundtrack_<name>)
+        static string Safe(string s) => new string(s.Select(c => (c < 128 && char.IsLetterOrDigit(c)) || c == '_' ? c : '_').ToArray());
     }
 
     /// <summary>Writes a groundtrack Houdini kit (the format of groundtrack's houdini-pop, with
@@ -193,16 +195,18 @@ namespace Groundtrack.Components
         static string Readme(string name, string folder) =>
 $@"groundtrack for Grasshopper -> Houdini: {name}
 
-Build the scene (Houdini, also Apprentice): Windows > Python Shell, paste
+Add it to a scene (Houdini, also Apprentice): open your scene, Windows > Python Shell, paste
 
     import os; os.environ[""GT_KIT""] = r""{folder}""; exec(open(r""{Path.Combine(folder, "hou_pop_build.py")}"").read())
 
-It writes {name}_pop.hipnc (.hip / .hiplc with other licences) here and the velocity volumes as .vdb.
-In the scene, 'combined' runs one POP simulation through all the fields: OUT_FIELD is their velocity
-volume (field 'vel'), the POP network pushes the particles with it (POP Advect by Volumes).
+It adds one subnet, /obj/groundtrack_{name.Trim('_')} - nothing else in the scene changes - and writes the
+velocity volumes here as .vdb; save the scene to keep it. (hython hou_pop_build.py <this folder> builds a
+new scene instead: {name}_pop.hipnc here.) In the subnet, 'combined' runs one POP simulation through all
+the fields: OUT_FIELD is their velocity volume (field 'vel'), the POP network pushes the particles with it
+(POP Advect by Volumes). The field files are read from this folder, wherever the scene is saved.
 
 As a force field in your own POP network:
-  POP Advect by Volumes  ->  Velocity Source: SOP, SOP Path: /obj/combined/OUT_FIELD (or a File SOP
+  POP Advect by Volumes  ->  Velocity Source: SOP, SOP Path: /obj/groundtrack_{name.Trim('_')}/combined/OUT_FIELD (or a File SOP
   loading {name}_combined_vel.vdb), Velocity Field: vel, Advection Type: Update Force (+ Air
   Resistance) for a force field, Update Velocity to follow it exactly.
 

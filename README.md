@@ -49,7 +49,7 @@ Tween, Bake and everything else work on it.
 | ![](src/Groundtrack/Icons/intersect.png) | **Intersect Fields** | Where layers cut through each other (like intersecting planes): the cut lines and the angle between the two flows along them. |
 | ![](src/Groundtrack/Icons/timeline.png) | **Timeline** | One clock (seconds) for Particles, Replay and time-sliced Fields. Double-click it to open the timeline window: play / pause, scrub, speed, loop, in / out, and **Record**, which saves the Rhino viewport as a PNG sequence. |
 | ![](src/Groundtrack/Icons/replay.png) | **Replay** | The real tracks at time T: everyone's position and trail, coloured by speed. It follows its field when you move or tilt it. |
-| ![](src/Groundtrack/Icons/export.png) | **Houdini Export** | Fields to Houdini as a force field for POPs: a groundtrack Houdini kit whose combined velocity volume drives a POP simulation (Update Force or Update Velocity), the volume as .vdb, the cells as .geo. One line for Houdini's Python Shell builds the scene. |
+| ![](src/Groundtrack/Icons/export.png) | **Houdini Export** | Fields to Houdini as a force field for POPs: a groundtrack Houdini kit whose combined velocity volume drives a POP simulation (Update Force or Update Velocity), the volume as .vdb, the cells as .geo. One line in Houdini's Python Shell adds it to the open scene (one subnet, nothing else touched). |
 | ![](src/Groundtrack/Icons/gradient.png) | **Gradient** | Recolour: presets (groundtrack, inferno, viridis, magma, greys, white-pink, blue-red, mono) or your own colours. Plug into Streamlines / Particles / Replay / Crossings. |
 
 Every force has a **Layers** input that makes it act on chosen layers only, so you can mix and

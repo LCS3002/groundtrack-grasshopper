@@ -45,7 +45,7 @@
 | Analyse | **Intersect Fields** | Where layers cut through each other: cut lines + flow angle. |
 | Time | **Timeline** | The clock. **Double-click** for the window: play, scrub, speed, loop, in/out, **Record** (PNGs). |
 | Time | **Replay** | The real people/vehicles at time T, with trails. |
-| Export | **Houdini Export** | Fields → Houdini POP kit: one velocity volume as a force field (Mode force / velocity, Air resistance), .vdb + .geo. Export = true, then paste the Houdini line into Houdini's Python Shell. |
+| Export | **Houdini Export** | Fields → Houdini POP kit: one velocity volume as a force field (Mode force / velocity, Air resistance), .vdb + .geo. Export = true, then paste the Houdini line into Houdini's Python Shell: it adds the setup to the open scene (subnet /obj/groundtrack_<Name>), nothing else changes. |
 | Colour | **Gradient** | Recolour with presets or your own colours. Plug into the Gradient input of Streamlines/Particles/Replay/Crossings. |
 
 ## Houdini POP → here
@@ -112,7 +112,7 @@
 21. **Blob joins:** stacked or neighbouring fields → **Fuse Fields** (Reach = how close before they join) → All → Particles (Join 2) / Streamlines.
 22. **Joins where you want them:** draw areas or curves → **Connect Fields** (Where) → All.
 23. **Terrain:** **Sculpt Field**: Points (hollows / hills), open curves (valleys / ridges), closed curves (areas); Downhill 0.5–1 so the flow runs into the hollows.
-24. **To Houdini (force field for POPs):** All → **Houdini Export** → Export = true → paste the Houdini line into Houdini's Python Shell (Windows > Python Shell). In your own POP network: POP Advect by Volumes → SOP path /obj/combined/OUT_FIELD (or the .vdb), field **vel**, Update Force + Air Resistance.
+24. **To Houdini (force field for POPs):** All → **Houdini Export** → Export = true → open your scene in Houdini, paste the Houdini line into the Python Shell (Windows > Python Shell): the subnet /obj/groundtrack_<Name> is added, nothing else changes; save. In your own POP network: POP Advect by Volumes → SOP path /obj/groundtrack_<Name>/combined/OUT_FIELD (or the .vdb), field **vel**, Update Force + Air Resistance (× 1 / scale when the field is scaled: the pull is quadratic). Scale / move / rotate the field in its subnet's combined/place: its arrows, voxels, pull, kill speed and dots follow. Put your own POP networks for it in an object without a transform.
 25. **Thicker export images:** Width input (2–4) on the drawing nodes; Timeline window **Size** 2–4x for Record.
 
 ## Particles settings
