@@ -92,7 +92,9 @@ namespace Groundtrack
         {
             if (Value == null) return;
             _arrows = _arrows ?? Arrows(Value, 1500);
-            foreach (var (lines, c) in _arrows) args.Pipeline.DrawLines(lines, Color.FromArgb(140, c), 1);
+            double dpi = args.Pipeline.DpiScale > 0 ? args.Pipeline.DpiScale : 1;
+            int th = Math.Max(1, (int)Math.Round(1.5 * dpi * Preview.CaptureScale));
+            foreach (var (lines, c) in _arrows) args.Pipeline.DrawLines(lines, Color.FromArgb(160, c), th);
         }
 
         public void DrawViewportMeshes(GH_PreviewMeshArgs args) { }

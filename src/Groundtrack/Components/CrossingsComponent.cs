@@ -31,6 +31,7 @@ namespace Groundtrack.Components
             p[1].Optional = true;
             p[2].Optional = true;
             p[3].Optional = true;
+            AddWidth(p);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -45,6 +46,7 @@ namespace Groundtrack.Components
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            ReadWidth(DA, 4);
             var ca = new List<Curve>();
             var cb = new List<Curve>();
             double cell = double.NaN;

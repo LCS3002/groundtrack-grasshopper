@@ -169,6 +169,55 @@ namespace Groundtrack.Tests
         }
 
         [Fact]
+        public void Fields_fuse_only_where_they_come_close()
+        {
+            var a = Uniform(20, 20, 1.0, 1.2, 0);                  // x 0..19, flowing east
+            var b = Uniform(20, 20, 1.0, 1.2, 0, 26, 0);           // x 26..45: a 6 m gap
+            b.Place = new Placement(1, 0, 0, 1, 0, 0, 1, 3);       // and 3 m up
+            Assert.Empty(Shape.Fuse(a, b, 4, 0.6));                // out of reach
+            var fu = Shape.Fuse(a, b, 9, 0.6);
+            Assert.Single(fu);
+            var (x0, _, _, x1, _, _) = fu[0].WorldBox();
+            Assert.True(x0 > 15 && x1 < 30, $"the fusion spans x {x0:0.0}..{x1:0.0}: only the facing sides");
+            var ps = new ParticleSystem { Rate = 100, Life = 80, Seed = 1, Join = 2 };
+            ps.Fields.Add(a); ps.Fields.Add(fu[0]); ps.Fields.Add(b);
+            var born = new System.Collections.Generic.Dictionary<int, int>();
+            int across = 0;
+            for (int t = 1; t <= 40; t++)
+            {
+                ps.StepTo(t);
+                foreach (var p in ps.Alive)
+                {
+                    if (!born.ContainsKey(p.Id)) born[p.Id] = p.Layer;
+                    if (born[p.Id] == 0 && p.Layer == 2) across++;
+                }
+            }
+            Assert.True(across > 0, "no particle crossed the fusion");
+            // only where asked: a mask that excludes everything
+            Assert.Empty(Shape.Fuse(a, b, 9, 0.6, q => false));
+        }
+
+        [Fact]
+        public void Sculpt_presses_a_hollow_and_turns_the_flow_into_it()
+        {
+            var f = Uniform(40, 40, 1.0, 1, 0);
+            var w = new double[f.Count];
+            for (int k = 0; k < f.Count; k++)
+            {
+                double dx = k % 40 - 20, dy = k / 40 - 20, r = Math.Sqrt(dx * dx + dy * dy);
+                w[k] = r < 10 ? 1 - r / 10 : 0;
+            }
+            var g = Shape.Sculpt(f, w, -4, 1);
+            Assert.Equal(-4, g.Z[20 * 40 + 20], 4);                // the hollow's bottom
+            Assert.Equal(0, g.Z[0], 6);                            // untouched far away
+            int k2 = 20 * 40 + 14;                                 // west of the centre: flows east, into it
+            int k3 = 26 * 40 + 20;                                 // north of it: turned south, down the slope
+            Assert.True(g.Vy[k3] < -0.3, $"vy {g.Vy[k3]:0.00}");
+            Assert.True(g.Vx[k2] > 0.9);
+            Assert.Equal(1, Math.Sqrt(g.Vx[k3] * g.Vx[k3] + g.Vy[k3] * g.Vy[k3]), 3);
+        }
+
+        [Fact]
         public void A_ribbon_runs_along_its_curve()
         {
             var curve = Enumerable.Range(0, 41).Select(i => (X: i * 0.5, Y: 0.0, Z: Math.Sin(i * 0.5 / 20 * Math.PI) * 5)).ToList();

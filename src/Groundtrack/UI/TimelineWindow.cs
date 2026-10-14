@@ -15,6 +15,7 @@ namespace Groundtrack.UI
         readonly Button _rec = new Button { Text = "Record", Width = 70 };
         readonly Button _start = new Button { Text = "|<", Width = 36 };
         readonly DropDown _speed = new DropDown();
+        readonly DropDown _scale = new DropDown();
         readonly CheckBox _loop = new CheckBox { Text = "Loop" };
         readonly NumericStepper _in = new NumericStepper { DecimalPlaces = 1, Increment = 1, Width = 70 };
         readonly NumericStepper _out = new NumericStepper { DecimalPlaces = 1, Increment = 1, Width = 70 };
@@ -31,6 +32,9 @@ namespace Groundtrack.UI
             Minimizable = false;
             Padding = new Padding(8);
             foreach (var s in Speeds) _speed.Items.Add($"{s:0.##}x");
+            foreach (var k in new[] { 1, 2, 3, 4 }) _scale.Items.Add($"{k}x");
+            _scale.ToolTip = "Record at this many times the viewport's size; lines and points scale with it";
+            _scale.SelectedIndexChanged += (o, e) => { if (!_sync && _scale.SelectedIndex >= 0) _c.RecordScale = _scale.SelectedIndex + 1; };
 
             _play.Click += (o, e) => { if (_c.Playing) _c.Pause(); else _c.Play(); };
             _start.Click += (o, e) => _c.SetTime(_c.In);
@@ -54,7 +58,7 @@ namespace Groundtrack.UI
             {
                 Orientation = Orientation.Horizontal, Spacing = 6, VerticalContentAlignment = VerticalAlignment.Center,
                 Items = { new Label { Text = "Speed" }, _speed, _loop, new Label { Text = "  In" }, _in,
-                          new Label { Text = "Out" }, _out, _rec },
+                          new Label { Text = "Out" }, _out, new Label { Text = "  Size" }, _scale, _rec },
             };
             Content = new StackLayout { Spacing = 6, Items = { row1, row2, _status } };
             _c.Changed += Sync;
@@ -79,6 +83,7 @@ namespace Groundtrack.UI
                 _rec.Text = _c.Recording ? "Stop" : "Record";
                 _speed.SelectedIndex = Math.Max(0, Array.IndexOf(Speeds, _c.Speed));
                 _loop.Checked = _c.Loop;
+                _scale.SelectedIndex = Math.Max(0, Math.Min(3, _c.RecordScale - 1));
                 _in.Value = _c.In;
                 _out.Value = _c.Out;
                 _status.Text = _c.Recording ? $"recording frame {_c.RecordedFrames} -> {_c.RecordFolder}"

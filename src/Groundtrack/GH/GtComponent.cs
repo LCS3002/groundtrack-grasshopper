@@ -53,9 +53,28 @@ namespace Groundtrack
         List<(Line[] Lines, Color Colour)> _drawn;
         BoundingBox _box = BoundingBox.Empty;
 
-        /// <summary>Line thickness of the preview (pixels).</summary>
-        protected virtual int Thickness => 1;
+        /// <summary>Line width of the preview (pixels at 100 % screen scale): the Width input.</summary>
+        protected double LineWidth = 1.5;
         protected virtual float PointSize => 2.5f;
+
+        /// <summary>The Width input (preview line width, px).</summary>
+        protected static void AddWidth(GH_InputParamManager p)
+            => p.AddNumberParameter("Width", "Wd", "Preview line width (px): scales with the screen and with the Timeline's Record size", GH_ParamAccess.item, 1.5);
+
+        /// <summary>Read the Width input at index (older definitions without it: 1.5).</summary>
+        protected void ReadWidth(IGH_DataAccess DA, int index)
+        {
+            double w = 1.5;
+            if (Params.Input.Count > index) DA.GetData(index, ref w);
+            LineWidth = Math.Max(0.25, w);
+        }
+
+        /// <summary>Pixels for a width at this screen / capture: DPI and Record's size.</summary>
+        internal static double Px(IGH_PreviewArgs args, double width)
+        {
+            double dpi = args.Display.DpiScale > 0 ? args.Display.DpiScale : 1;
+            return width * dpi * Preview.CaptureScale;
+        }
 
         protected override void BeforeSolveInstance()
         {
@@ -89,9 +108,10 @@ namespace Groundtrack
         public override void DrawViewportWires(IGH_PreviewArgs args)
         {
             if (Hidden || Locked) return;
-            int th = Attributes.Selected ? Thickness + 1 : Thickness;
+            int th = Math.Max(1, (int)Math.Round(Px(args, LineWidth * (Attributes.Selected ? 1.5 : 1))));
             if (_drawn != null) foreach (var (l, c) in _drawn) args.Display.DrawLines(l, c, th);
-            if (Cloud.Count > 0) Cloud.Draw(args, Attributes.Selected ? PointSize + 1 : PointSize);
+            float ps = (float)Px(args, PointSize * Math.Max(1, LineWidth / 1.5)) + (Attributes.Selected ? 1 : 0);
+            if (Cloud.Count > 0) Cloud.Draw(args, ps);
         }
 
         public override void DrawViewportMeshes(IGH_PreviewArgs args)

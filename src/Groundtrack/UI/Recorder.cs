@@ -23,18 +23,34 @@ namespace Groundtrack.UI
             return doc.Views.ActiveView ?? (all.Length > 0 ? all[0] : null);
         }
 
-        /// <summary>Capture a frame; false when there is no view to capture.</summary>
-        public static bool Capture(string path, Size size = default)
+        /// <summary>Capture a frame at `scale` x the viewport's size, groundtrack's lines and
+        /// points scaled with it (so they keep their look instead of thinning out); false when
+        /// there is no view to capture.</summary>
+        public static bool Capture(string path, Size size = default, int scale = 1)
         {
             var view = View();
             if (view == null) return false;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             if (size.IsEmpty) size = view.ActiveViewport.Size;
+            scale = Math.Max(1, Math.Min(8, scale));
             view.Redraw();
-            using (var bmp = view.CaptureToBitmap(size))
+            Groundtrack.Preview.CaptureScale = scale;
+            try
             {
-                if (bmp == null) return false;
-                bmp.Save(path, ImageFormat.Png);
+                var vc = new ViewCapture
+                {
+                    Width = size.Width * scale, Height = size.Height * scale, ScaleScreenItems = false,
+                    DrawAxes = false, DrawGrid = false, DrawGridAxes = false, TransparentBackground = false,
+                };
+                using (var bmp = vc.CaptureToBitmap(view))
+                {
+                    if (bmp == null) return false;
+                    bmp.Save(path, ImageFormat.Png);
+                }
+            }
+            finally
+            {
+                Groundtrack.Preview.CaptureScale = 1;
             }
             return true;
         }

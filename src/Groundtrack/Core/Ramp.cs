@@ -17,6 +17,9 @@ namespace Groundtrack.Core
             new[] { 1.0, 0.6308, 0.0687, 0.0040 },
         };
 
+        /// <summary>The ramp's stops: t, then sRGB 0..1.</summary>
+        public static System.Collections.Generic.IReadOnlyList<double[]> SrgbStops => Stops;
+
         /// <summary>RGB 0..255 for t in 0..1.</summary>
         public static (byte R, byte G, byte B) At(double t)
         {

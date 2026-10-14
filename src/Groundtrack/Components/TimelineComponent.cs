@@ -29,6 +29,8 @@ namespace Groundtrack.Components
         // ---- state (saved with the file)
         public double Current, In = 0, Out = 30, Speed = 1, Fps = 30;
         public bool Loop = true;
+        /// <summary>Record at this many times the viewport's size (lines scaled with it).</summary>
+        public int RecordScale = 2;
         public bool Playing { get; private set; }
         public bool Recording { get; private set; }
         public string RecordFolder = "";
@@ -153,7 +155,7 @@ namespace Groundtrack.Components
             {
                 if (!Recording) return;
                 string path = Path.Combine(RecordFolder, $"frame_{RecordedFrames:00000}.png");
-                if (!Recorder.Capture(path))
+                if (!Recorder.Capture(path, default, RecordScale))
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "No Rhino view to record");
                     StopRecording();
@@ -235,6 +237,7 @@ namespace Groundtrack.Components
             writer.SetDouble("gt_out", Out);
             writer.SetDouble("gt_speed", Speed);
             writer.SetDouble("gt_fps", Fps);
+            writer.SetInt32("gt_scale", RecordScale);
             writer.SetBoolean("gt_loop", Loop);
             return base.Write(writer);
         }
@@ -248,6 +251,8 @@ namespace Groundtrack.Components
             if (reader.TryGetDouble("gt_out", ref v)) Out = v;
             if (reader.TryGetDouble("gt_speed", ref v)) Speed = v;
             if (reader.TryGetDouble("gt_fps", ref v)) Fps = v;
+            int sc = 2;
+            if (reader.TryGetInt32("gt_scale", ref sc)) RecordScale = sc;
             if (reader.TryGetBoolean("gt_loop", ref b)) Loop = b;
             return Compat.Read(this, reader, r => base.Read(r));
         }

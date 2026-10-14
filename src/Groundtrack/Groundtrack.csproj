@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Icons\*.png" />
+    <EmbeddedResource Include="Resources\hou_pop_build.py" LogicalName="hou_pop_build.py" />
   </ItemGroup>
 
 </Project>

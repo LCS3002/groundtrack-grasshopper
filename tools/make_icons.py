@@ -235,3 +235,43 @@ for j in range(4):
         d.polygon([q(i, j), q(i + 1, j), q(i + 1, j + 1), q(i, j + 1)], fill=ramp((i + j) / 6), outline=INK)
 save(im, "surface")
 print("icons:", len(list(OUT.iterdir())))
+
+# ---- joins, sculpting, export (0.5)
+im, d = canvas()                                   # fuse: two blobs melting into each other
+d.ellipse([2 * S, 6 * S, 12 * S, 16 * S], fill=ramp(0.2))
+d.ellipse([12 * S, 8 * S, 22 * S, 18 * S], fill=ramp(0.75))
+d.polygon([(9 * S, 8.5 * S), (15 * S, 10 * S), (15 * S, 16 * S), (9 * S, 14 * S)], fill=ramp(0.48))
+save(im, "fuse")
+
+im, d = canvas()                                   # connect: two layers joined smoothly inside a marked area
+d.line([(1 * S, 7 * S), (13 * S, 7 * S)], fill=ramp(0.2), width=2 * S)
+d.line([(11 * S, 18 * S), (23 * S, 18 * S)], fill=ramp(0.75), width=2 * S)
+pts = []
+for n in range(41):
+    t = n / 40
+    pts.append(((13 + 0 * t) * S + 0, (7 + 11 * (3 * t * t - 2 * t * t * t)) * S))
+pts = [((11 + 2 * (1 - t)) * S, (7 + 11 * (3 * t * t - 2 * t * t * t)) * S) for t in [n / 40 for n in range(41)]]
+d.line(pts, fill=ramp(0.48), width=2 * S, joint="curve")
+for k in range(0, 24, 4):
+    d.line([(6 * S, (2 + k * 0.85) * S), (6 * S, (3.6 + k * 0.85) * S)], fill=(255, 60, 190, 255), width=S)
+    d.line([(19 * S, (2 + k * 0.85) * S), (19 * S, (3.6 + k * 0.85) * S)], fill=(255, 60, 190, 255), width=S)
+save(im, "connect")
+
+im, d = canvas()                                   # sculpt: ground pressed into a hollow, flow running down
+gr = [(x * S, (9 + 7 * math.exp(-((x - 12) / 4.5) ** 2)) * S) for x in [1 + 0.5 * n for n in range(45)]]
+d.polygon(gr + [(23 * S, 23 * S), (1 * S, 23 * S)], fill=(225, 225, 228, 255))
+d.line(gr, fill=INK, width=S + 1, joint="curve")
+arrow(d, 12, 1.5, 12, 7.5, (255, 60, 190, 255), 2)
+for x0 in (5, 18):
+    y0 = 9 + 7 * math.exp(-((x0 - 12) / 4.5) ** 2) - 2
+    arrow(d, x0, y0, x0 + (2.5 if x0 < 12 else -2.5), y0 + 2.2, ramp(0.3 if x0 < 12 else 0.8), 1)
+save(im, "sculpt")
+
+im, d = canvas()                                   # houdini export: a field grid sent out of the box
+for j, y in enumerate((6, 12, 18)):
+    for i, x in enumerate((3, 8)):
+        arrow(d, x, y, x + 3.5, y - 1.2, ramp((i + j) / 3), 1)
+d.rounded_rectangle([12 * S, 4 * S, 22 * S, 20 * S], radius=2 * S, outline=INK, width=S + 1)
+arrow(d, 13, 12, 21, 12, (255, 128, 0, 255), 2)
+save(im, "export")
+print("icons:", len(list(OUT.iterdir())))

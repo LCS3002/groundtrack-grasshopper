@@ -16,6 +16,9 @@ namespace Groundtrack
     {
         public const int Buckets = 48;
 
+        /// <summary>Line widths are multiplied by this while the Timeline records at a larger size.</summary>
+        public static double CaptureScale = 1;
+
         public static Color SpeedColour(double speed, double top, Gradient gradient = null)
             => Colour(speed / Math.Max(top, 1e-9), gradient);
 

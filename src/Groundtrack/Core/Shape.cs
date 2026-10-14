@@ -172,42 +172,61 @@ namespace Groundtrack.Core
             bool closed = end - start > 0.999;
             int i0 = (int)Math.Round(start * n), i1 = closed ? i0 + n : (int)Math.Round(end * n);
             int nu = Math.Max(2, i1 - i0 + (closed ? 1 : 1));
-            // the fold's length: mean distance edge to edge (plus the swing)
+            var As = new List<EdgePoint>(nu);
+            var Bs = new List<EdgePoint>(nu);
+            for (int i = 0; i < nu; i++) { As.Add(A[(i0 + i) % n]); Bs.Add(B[(i0 + i) % n]); }
+            return FoldBand(As, Bs, null, swing, cell, "loft", a.Group);
+        }
+
+        /// <summary>A fold from edge points As (on one field) to their partners Bs (on another):
+        /// out of As along their outward direction, swinging out (Swing x the gap) and landing on
+        /// Bs from outside, so the two meet in one sheet. strength (0..1, null = 1): how far the
+        /// fold reaches over to Bs - below 1 it stops short, a lip that fades (the ends of a fuse).
+        /// The flow blends from As' flow into Bs' across it.</summary>
+        static FieldData FoldBand(IList<EdgePoint> As, IList<EdgePoint> Bs, IList<double> strength, double swing,
+                                  double cell, string site, string group)
+        {
+            int nu = As.Count;
+            if (nu < 2) return null;
+            double W(int i) => strength == null ? 1 : Math.Max(0, Math.Min(1, strength[i]));
             double gap = 0;
-            for (int i = 0; i < n; i++) gap += Dist(A[i].P, B[i].P);
-            gap /= n;
+            for (int i = 0; i < nu; i++) gap += Dist(As[i].P, Bs[i].P) * W(i);
+            gap /= nu;
             int nv = Math.Max(3, (int)Math.Ceiling(gap * (1 + 0.6 * swing) / cell) + 1);
             var P = new double[nu, nv, 3];
             var V = new double[nu, nv, 3];
             var D = new double[nu, nv];
+            var far = new double[nu][];
             double smax = 0;
             for (int i = 0; i < nu; i++)
             {
-                var ea = A[(i0 + i) % n];
-                var eb = B[(i0 + i) % n];
-                double L = Dist(ea.P, eb.P) * swing;
-                var t0 = Scale(ea.Out, L);                  // out of a's edge
-                var t1 = Scale(eb.Out, -L);                 // into b's edge
+                var ea = As[i];
+                var eb = Bs[i];
+                double w = W(i);
+                var pb = Lerp(ea.P, eb.P, w);
+                double L = Dist(ea.P, pb) * swing;
+                var t0 = Scale(ea.Out, L);                  // out of the first edge
+                var t1 = Scale(eb.Out, -L);                 // into the second
                 for (int j = 0; j < nv; j++)
                 {
                     double t = j / (double)(nv - 1);
                     double h00 = 2 * t * t * t - 3 * t * t + 1, h10 = t * t * t - 2 * t * t + t;
                     double h01 = -2 * t * t * t + 3 * t * t, h11 = t * t * t - t * t;
                     for (int c = 0; c < 3; c++)
-                        P[i, j, c] = h00 * ea.P[c] + h10 * t0[c] + h01 * eb.P[c] + h11 * t1[c];
-                    D[i, j] = ea.Density + (eb.Density - ea.Density) * t;
+                        P[i, j, c] = h00 * ea.P[c] + h10 * t0[c] + h01 * pb[c] + h11 * t1[c];
+                    D[i, j] = ea.Density + (eb.Density - ea.Density) * t * w;
                 }
+                far[i] = Lerp(ea.Vel, eb.Vel, w);
                 smax = Math.Max(smax, Math.Max(ea.Smax, eb.Smax));
             }
             // the flow: each edge's velocity in the fold's own axes at that edge, blended across
             for (int i = 0; i < nu; i++)
             {
-                var ea = A[(i0 + i) % n];
-                var eb = B[(i0 + i) % n];
+                var ea = As[i];
                 var (ua, va) = Axes(P, i, 0, nu, nv);
                 var (ub, vb) = Axes(P, i, nv - 1, nu, nv);
                 var (a0, a1) = InAxes(ua[0], ua[1], ua[2], va[0], va[1], va[2], ea.Vel[0], ea.Vel[1], ea.Vel[2]);
-                var (b0, b1) = InAxes(ub[0], ub[1], ub[2], vb[0], vb[1], vb[2], eb.Vel[0], eb.Vel[1], eb.Vel[2]);
+                var (b0, b1) = InAxes(ub[0], ub[1], ub[2], vb[0], vb[1], vb[2], far[i][0], far[i][1], far[i][2]);
                 for (int j = 0; j < nv; j++)
                 {
                     double t = j / (double)(nv - 1);
@@ -217,7 +236,121 @@ namespace Groundtrack.Core
                     for (int c = 0; c < 3; c++) V[i, j, c] = c0 * u[c] + c1 * v[c];
                 }
             }
-            var o = SheetField(P, V, D, cell, smax > 0 ? smax : 2.5, "loft", a.Group);
+            return SheetField(P, V, D, cell, smax > 0 ? smax : 2.5, site, group);
+        }
+
+        /// <summary>Two fields fused where their edges come close, like blobs: along the parts of
+        /// a's outline within `reach` of b's, a fold to the nearest part of b's edge, fuller the
+        /// closer they are and fading out at the ends. `where` (optional): only edge points of a it
+        /// accepts (world). One field per fused stretch.</summary>
+        public static List<FieldData> Fuse(FieldData a, FieldData b, double reach, double swing, Func<double[], bool> where = null)
+        {
+            var res = new List<FieldData>();
+            var la = Outlines(a);
+            var lb = Outlines(b);
+            if (la.Count == 0 || lb.Count == 0 || reach <= 0) return res;
+            double cell = Math.Max(Math.Min(a.WorldCell, b.WorldCell), 0.25);
+            var A = Resample(EdgeFrames(a, la[0]), cell);
+            var B = Resample(EdgeFrames(b, lb[0]), cell);
+            int n = A.Count, m = B.Count;
+            var match = new int[n];
+            var dist = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                double bd = double.MaxValue;
+                for (int j = 0; j < m; j++)
+                {
+                    double d = Dist(A[i].P, B[j].P);
+                    if (d < bd) { bd = d; match[i] = j; }
+                }
+                dist[i] = bd;
+            }
+            var on = new bool[n];
+            for (int i = 0; i < n; i++) on[i] = dist[i] <= reach && (where == null || where(A[i].P));
+            // stretches of a's outline that fuse (round the loop)
+            var runs = new List<List<int>>();
+            int first = Array.IndexOf(on, false);
+            if (first < 0) runs.Add(Enumerable.Range(0, n).ToList());
+            else
+            {
+                List<int> cur = null;
+                for (int k = 1; k <= n; k++)
+                {
+                    int i = (first + k) % n;
+                    if (on[i]) { if (cur == null) runs.Add(cur = new List<int>()); cur.Add(i); }
+                    else cur = null;
+                }
+            }
+            foreach (var run in runs.Where(r => r.Count >= 3))
+            {
+                bool closed = run.Count == n;
+                var As = run.Select(i => A[i]).ToList();
+                // partners: the nearest points of b's edge, smoothed along the stretch (no kinks)
+                var Bs = new List<EdgePoint>(run.Count);
+                var w = new List<double>(run.Count);
+                int taper = Math.Max(2, run.Count / 6);
+                for (int k = 0; k < run.Count; k++)
+                {
+                    var acc = new EdgePoint { P = new double[3], Out = new double[3], Vel = new double[3] };
+                    int cnt = 0;
+                    for (int dk = -2; dk <= 2; dk++)
+                    {
+                        int kk = k + dk;
+                        if (closed) kk = (kk % run.Count + run.Count) % run.Count;
+                        else if (kk < 0 || kk >= run.Count) continue;
+                        var e = B[match[run[kk]]];
+                        for (int c = 0; c < 3; c++) { acc.P[c] += e.P[c]; acc.Out[c] += e.Out[c]; acc.Vel[c] += e.Vel[c]; }
+                        acc.Density += e.Density; acc.Smax = Math.Max(acc.Smax, e.Smax);
+                        cnt++;
+                    }
+                    acc.P = Scale(acc.P, 1.0 / cnt); acc.Out = Unit(acc.Out); acc.Vel = Scale(acc.Vel, 1.0 / cnt);
+                    acc.Density /= cnt;
+                    Bs.Add(acc);
+                    double near = Smooth01((reach - dist[run[k]]) / (0.4 * reach));
+                    double ends = closed ? 1 : Smooth01(Math.Min(k, run.Count - 1 - k) / (double)taper);
+                    w.Add(near * ends);
+                }
+                var band = FoldBand(As, Bs, w, swing, cell, "fuse", a.Group);
+                if (band != null) res.Add(band);
+            }
+            return res;
+        }
+
+        static double Smooth01(double x)
+        {
+            x = Math.Max(0, Math.Min(1, x));
+            return x * x * (3 - 2 * x);
+        }
+
+        // ---- sculpt: terrain shaping in areas ------------------------------------------------------
+
+        /// <summary>Ground raised / lowered by `height` x weight per cell (0..1, e.g. 1 inside an
+        /// area fading to 0 at its edge); downhill (0..1): the flow turns down the new slopes.</summary>
+        public static FieldData Sculpt(FieldData f, double[] weight, double height, double downhill)
+        {
+            var dz = new double[f.Count];
+            for (int k = 0; k < f.Count; k++) dz[k] = f.Has[k] ? height * weight[k] : 0;
+            var o = Lift(f, dz);
+            if (downhill <= 0) return o;
+            double cw = f.WorldCell;
+            for (int j = 0; j < f.Ny; j++)
+                for (int i = 0; i < f.Nx; i++)
+                {
+                    int k = j * f.Nx + i;
+                    if (!f.Has[k]) continue;
+                    double Dz(int ii, int jj) => ii >= 0 && jj >= 0 && ii < f.Nx && jj < f.Ny && f.Has[jj * f.Nx + ii] ? dz[jj * f.Nx + ii] : dz[k];
+                    double gx = (Dz(i + 1, j) - Dz(i - 1, j)) / (2 * cw), gy = (Dz(i, j + 1) - Dz(i, j - 1)) / (2 * cw);
+                    double slope = Math.Sqrt(gx * gx + gy * gy);
+                    if (slope < 1e-6) continue;
+                    double vx = o.Vx[k], vy = o.Vy[k], sp = Math.Sqrt(vx * vx + vy * vy);
+                    double t = Math.Min(1, downhill * Math.Min(1, slope * 2));
+                    double ux = sp > 1e-9 ? vx / sp : 0, uy = sp > 1e-9 ? vy / sp : 0;
+                    double nx = (1 - t) * ux - t * gx / slope, ny = (1 - t) * uy - t * gy / slope;
+                    double nl = Math.Sqrt(nx * nx + ny * ny);
+                    if (nl < 1e-9) continue;
+                    double s2 = Math.Max(sp, 0.3 * downhill);
+                    o.Vx[k] = (float)(nx / nl * s2); o.Vy[k] = (float)(ny / nl * s2);
+                }
             return o;
         }
 

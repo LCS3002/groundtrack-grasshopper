@@ -32,6 +32,7 @@ namespace Groundtrack.Components
             p.AddParameter(new GradientParam(), "Gradient", "Grad", "Recolour (Gradient component); empty = the groundtrack ramp", GH_ParamAccess.item);
             p[3].Optional = true;
             p[4].Optional = true;
+            AddWidth(p);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -47,6 +48,7 @@ namespace Groundtrack.Components
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            ReadWidth(DA, 5);
             FieldGoo g = null;
             double t = 0, tail = 3;
             string group = null;

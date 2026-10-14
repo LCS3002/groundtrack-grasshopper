@@ -55,6 +55,7 @@ namespace Groundtrack.Components
             p[5].Optional = true;
             p[10].Optional = true;
             p[16].Optional = true;
+            AddWidth(p);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
@@ -71,6 +72,7 @@ namespace Groundtrack.Components
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            ReadWidth(DA, 18);
             var goos = new List<FieldGoo>();
             double t = double.NaN, rate = 300, life = double.NaN, speed = 1, noise = 0, trail = 2;
             double response = 0, hold = 1, drag = 1, join = 2;

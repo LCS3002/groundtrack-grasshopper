@@ -1276,6 +1276,122 @@ for _ in range(60):
     ps.Step()
 check("Step time on a warped field", len(ps.Alive) > 2000, f"{len(ps.Alive)} particles: {sw.Elapsed.TotalMilliseconds / 60:.1f} ms per step")
 
+
+# ---- joins where they come close, where you say; sculpting; Houdini export (0.5) ---------------
+print("\n== Fuse, Connect, Sculpt, Houdini export (plaza)", flush=True)
+for key, n in (("fuse", 527), ("connect", 528), ("sculpt", 529), ("houdini", 530)):
+    G[key] = f"3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e{n}"
+import json as _json  # noqa: E402
+import tempfile  # noqa: E402
+
+fz_a = field_comp("reuters_plaza", "whole", "people", 5400, 0)
+fz_b0 = field_comp("reuters_plaza", "plaza3", "people", 5400, 100)
+fz_b = emit("transformfield", 5500, 100)
+wire(fz_b0, 0, fz_b, 0)
+impl(fz_b.Params.Input[1]).PersistentData.Clear()
+impl(fz_b.Params.Input[1]).PersistentData.Append(GH_Vector(RG.Vector3d(52.0, 0, 4.0)))
+fu = emit("fuse", 5700, 50)
+impl(fu.Params.Input[0]).AddSource(impl(fz_a.Params.Output[0]))
+impl(fu.Params.Input[0]).AddSource(impl(fz_b.Params.Output[0]))
+put(fu, 1, 16.0)
+solve()
+fusions = [g_.Value for g_ in out(fu, 0)]
+all_f = [g_.Value for g_ in out(fu, 1)]
+fa_box, fb_box = out(fz_a, 0)[0].Value.WorldBox(), out(fz_b, 0)[0].Value.WorldBox()
+gap_mid = (fa_box.Item4 + fb_box.Item1) / 2
+spans = [(f_.WorldBox().Item1, f_.WorldBox().Item4) for f_ in fusions]
+ps = ParticleSystem()
+for f_ in all_f:
+    ps.Fields.Add(f_)
+ps.Rate, ps.Life, ps.Seed, ps.Join = 300.0, 150.0, 1, 2.0
+first, reached_f = {}, {}
+for t_ in range(1, 121):
+    ps.StepTo(float(t_))
+    for p_ in ps.Alive:
+        first.setdefault(p_.Id, p_.Layer)
+        reached_f[p_.Id] = reached_f.get(p_.Id, set()) | {p_.Layer}
+onto_f = sum(1 for i_ in first if first[i_] in (0, 1) and any(l_ >= 2 for l_ in reached_f[i_]))
+across_f = sum(1 for i_ in first if first[i_] in (0, 1) and {0, 1} <= reached_f[i_])
+check("Fuse Fields: the plaza and plaza 3 (52 m east, 4 m up) fuse on their facing sides only",
+      len(fusions) >= 1 and all(f_.Warped for f_ in fusions) and all(x0 > fa_box.Item1 + 10 and x1 < fb_box.Item4 - 10 for x0, x1 in spans)
+      and onto_f > 20 and across_f > 0,
+      f"{len(fusions)} fusions spanning x {[(round(x0), round(x1)) for x0, x1 in spans]} (plaza x {fa_box.Item1:.0f}..{fa_box.Item4:.0f}, "
+      f"plaza 3 x {fb_box.Item1:.0f}..{fb_box.Item4:.0f}); in 120 s {onto_f} particles onto a fusion, {across_f} across")
+put(fu, 1, 3.0)
+solve()
+check("Fuse Fields: out of reach, no fusion", len(out(fu, 0)) == 0, f"Reach 3 m: {len(out(fu, 0))} fusions")
+
+# Connect: only where a drawn area says (the southern half of the gap)
+cn = emit("connect", 5700, 200)
+impl(cn.Params.Input[0]).AddSource(impl(fz_a.Params.Output[0]))
+impl(cn.Params.Input[0]).AddSource(impl(fz_b.Params.Output[0]))
+area = RG.Polyline([RG.Point3d(fa_box.Item4 - 20, fa_box.Item2 - 5, 0), RG.Point3d(fb_box.Item1 + 20, fa_box.Item2 - 5, 0),
+                    RG.Point3d(fb_box.Item1 + 20, (fa_box.Item2 + fa_box.Item5) / 2, 0), RG.Point3d(fa_box.Item4 - 20, (fa_box.Item2 + fa_box.Item5) / 2, 0),
+                    RG.Point3d(fa_box.Item4 - 20, fa_box.Item2 - 5, 0)])
+impl(cn.Params.Input[1]).PersistentData.Append(GH_Curve(RG.PolylineCurve(area)))
+solve()
+joins = [g_.Value for g_ in out(cn, 0)]
+ymax = max((j_.WorldBox().Item5 for j_ in joins), default=1e9)
+check("Connect Fields: joins only inside the drawn area", len(joins) >= 1 and ymax < (fa_box.Item2 + fa_box.Item5) / 2 + 12,
+      f"{len(joins)} joins, reaching up to y {ymax:.0f} (area up to y {(fa_box.Item2 + fa_box.Item5) / 2:.0f})")
+
+# Sculpt: a hollow pressed into the plaza, the flow running down into it
+sc = emit("sculpt", 5700, 300)
+wire(fz_a, 0, sc, 0)
+cpt = RG.Point3d((fa_box.Item1 + fa_box.Item4) / 2, (fa_box.Item2 + fa_box.Item5) / 2, 0)
+impl(sc.Params.Input[2]).PersistentData.Append(GH_Point(cpt))
+put(sc, 3, -5.0)
+put(sc, 5, 18.0)
+put(sc, 7, 1.0)
+solve()
+f_sc = out(sc, 0)[0].Value
+ok_c, s_c = f_sc.SampleWorld(cpt.X, cpt.Y, 0)
+inward = []
+for k in range(f_sc.Count):
+    if not f_sc.Has[k]:
+        continue
+    w_ = f_sc.CellWorld(k)
+    r_ = math.hypot(w_.Item1 - cpt.X, w_.Item2 - cpt.Y)
+    if 5 < r_ < 14:
+        v_ = f_sc.CellVelocity(k)
+        sp_ = math.hypot(v_.Item1, v_.Item2)
+        if sp_ > 0.05:
+            inward.append(-((w_.Item1 - cpt.X) * v_.Item1 + (w_.Item2 - cpt.Y) * v_.Item2) / (r_ * sp_))
+inward.sort()
+r_s = sheet_check(impl(sc.Params.Output[0]), f_sc)
+check("Sculpt Field: a 5 m hollow, the flow running down into it",
+      ok_c and abs(s_c.Z + 5) < 0.3 and inward and inward[len(inward) // 2] > 0.5 and r_s[3] == 0,
+      f"ground at the centre {s_c.Z:.2f} m; flow on the slope: median inward share {inward[len(inward) // 2]:.2f}; particles: "
+      f"{r_s[2]}, {r_s[3]} outside")
+
+# Houdini export: the fused landscape as a kit + .geo
+hx = emit("houdini", 5900, 50)
+impl(hx.Params.Input[0]).AddSource(impl(fu.Params.Output[1]))
+put(fu, 1, 16.0)
+kit_dir = os.path.join(tempfile.gettempdir(), "groundtrack_houdini_test")
+put(hx, 1, kit_dir)
+put(hx, 2, "fused")
+put(hx, 5, True)
+solve()
+files = [str(g_.Value) for g_ in out(hx, 2)]
+line = str(out(hx, 1)[0].Value)
+csvs = [f_ for f_ in files if f_.endswith(".csv")]
+rows = sum(len(open(f_, encoding="utf-8").read().strip().splitlines()) - 1 for f_ in csvs)
+cells = sum(f_.Valid for f_ in all_f)
+geo = _json.load(open(os.path.join(kit_dir, "fused_field.geo"), encoding="utf-8"))
+geo_n = geo[geo.index("pointcount") + 1]
+mods = _json.load(open(os.path.join(kit_dir, "modules.json"), encoding="utf-8"))
+hdr = open(csvs[0], encoding="utf-8").readline().strip()
+first_row = open(csvs[0], encoding="utf-8").readlines()[1].split(",")
+w0 = all_f[0].CellWorld(next(k for k in range(all_f[0].Count) if all_f[0].Has[k]))
+axes_ok = abs(float(first_row[0]) - w0.Item1) < 0.01 and abs(float(first_row[1]) - w0.Item3) < 0.01 and abs(float(first_row[2]) + w0.Item2) < 0.01
+check("Houdini Export: a POP kit and a .geo of the fused landscape",
+      not msgs(hx) and len(csvs) == len(all_f) and rows == cells and geo_n == cells and len(mods["modules"]) == len(all_f)
+      and mods["combined"] and all(m_["advect"] == "force" for m_ in mods["modules"]) and hdr.startswith("x,y,z,vx,vy,vz") and axes_ok
+      and os.path.exists(os.path.join(kit_dir, "hou_pop_build.py")) and "GT_KIT" in line,
+      f"{len(files)} files: {len(csvs)} field CSVs ({rows} cells = {cells}), .geo with {geo_n} points, {len(mods['modules'])} modules "
+      f"(force field), Houdini axes (Y up, Z = -north): {axes_ok}")
+
 # ---- definitions saved with older versions open cleanly (components gained inputs since) ----------
 print("\n== Older definitions", flush=True)
 clr.AddReference(r"C:\Program Files\Rhino 8\Plug-ins\Grasshopper\GH_IO.dll")
@@ -1593,6 +1709,48 @@ if args.example:
     group("9  Bend, bridge, cut: plaza 3 bent up 60 deg (Warp Field) and joined to the plaza by automatic ribbons (Bridge); "
           "a copy tilted 35 deg cuts the plaza (Intersect Fields)",
           l11 + l12 + [f11, f12, tf11, tf12, bd12, br9, s9, t9, p9, tl9, ct9, s9b], Color.FromArgb(60, 200, 160, 230))
+
+    # 10: fuse + sculpt + Houdini - the plaza with a hollow pressed in, fused with plaza 3 beside it; export
+    off10 = 1300.0
+    G["fuse"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e527"
+    G["sculpt"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e529"
+    G["houdini"] = "3f6a1d0e-8b2c-4d5e-9f01-a1b2c3d4e530"
+    f13, l13 = field_with_lists("whole", "people", 260, 3700)
+    f14, l14 = field_with_lists("plaza3", "people", 260, 3830)
+    f13.Hidden = f14.Hidden = True
+    tf13, tf14 = comp("transformfield", 420, 3700), comp("transformfield", 420, 3830)
+    for tf_, src_, mv in ((tf13, f13, RG.Vector3d(off10, 0, 0)), (tf14, f14, RG.Vector3d(off10 + 52.0, 0, 4.0))):
+        tf_.Hidden = True
+        impl(tf_.Params.Input[0]).AddSource(impl(src_.Params.Output[0]))
+        impl(tf_.Params.Input[1]).PersistentData.Clear()
+        impl(tf_.Params.Input[1]).PersistentData.Append(GH_Vector(mv))
+    b13 = Catalog.Load(plaza, "whole", "people", True).Bounds()
+    sc13 = comp("sculpt", 580, 3700)
+    sc13.Hidden = True
+    impl(sc13.Params.Input[0]).AddSource(impl(tf13.Params.Output[0]))
+    impl(sc13.Params.Input[2]).PersistentData.Append(GH_Point(RG.Point3d(off10 + (b13.Item1 + b13.Item3) / 2, (b13.Item2 + b13.Item4) / 2, 0)))
+    for ix, goo in ((3, GH_Number(-5.0)), (5, GH_Number(18.0)), (7, GH_Number(1.0))):
+        impl(sc13.Params.Input[ix]).PersistentData.Clear()
+        impl(sc13.Params.Input[ix]).PersistentData.Append(goo)
+    fu10 = comp("fuse", 760, 3760)
+    fu10.Hidden = True
+    impl(fu10.Params.Input[0]).AddSource(impl(sc13.Params.Output[0]))
+    impl(fu10.Params.Input[0]).AddSource(impl(tf14.Params.Output[0]))
+    impl(fu10.Params.Input[1]).PersistentData.Clear()
+    impl(fu10.Params.Input[1]).PersistentData.Append(GH_Number(16.0))
+    s10 = comp("stream", 960, 3700)
+    impl(s10.Params.Input[0]).AddSource(impl(fu10.Params.Output[1]))
+    t10 = comp("timeline", 780, 3920)
+    p10 = comp("particles", 960, 3840)
+    impl(p10.Params.Input[0]).AddSource(impl(fu10.Params.Output[1]))
+    impl(p10.Params.Input[1]).AddSource(impl(t10.Params.Output[0]))
+    hx10 = comp("houdini", 960, 4000)
+    impl(hx10.Params.Input[0]).AddSource(impl(fu10.Params.Output[1]))
+    impl(hx10.Params.Input[2]).PersistentData.Clear()
+    impl(hx10.Params.Input[2]).PersistentData.Append(GH_String("plaza_fused"))
+    group("10  Fuse + sculpt + Houdini: a hollow pressed into the plaza (Sculpt Field, the flow running down into it), fused "
+          "with plaza 3 beside it where they come close (Fuse Fields); Houdini Export: set Export to true, paste the Houdini line",
+          l13 + l14 + [f13, f14, tf13, tf14, sc13, fu10, s10, t10, p10, hx10], Color.FromArgb(60, 250, 200, 90))
     ex.NewSolution(False)
     bad = [(o.NickName, [str(m) for m in o.RuntimeMessages(Grasshopper.Kernel.GH_RuntimeMessageLevel.Error)])
            for o in map(impl, ex.Objects) if hasattr(o, "RuntimeMessages") and

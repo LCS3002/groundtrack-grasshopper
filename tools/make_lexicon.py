@@ -16,10 +16,12 @@ from PIL import Image, ImageDraw, ImageFont
 COLUMNS = [[("Data", ["Field", "Transform Field", "Field from Curves"])],
            [("Flow", ["Streamlines", "Particles"])],
            [("", ["Merge Fields", "Blend Fields", "Smooth Field"])],
-           [("Shape", ["Warp Field", "Landscape", "Loft Fields", "Bridge", "Field Surface"])],
+           [("Shape", ["Warp Field", "Landscape", "Sculpt Field", "Field Surface"])],
+           [("", ["Loft Fields", "Fuse Fields", "Connect Fields", "Bridge"])],
            [("Forces", ["Force", "Axis Force", "Attract", "Curve Force"])],
            [("", ["Field Force", "Interact", "Obstacle", "Apply Forces"])],
-           [("Analyse", ["Crossings", "Intersect Fields"]), ("Time", ["Timeline", "Replay"]), ("Colour", ["Gradient"])]]
+           [("Analyse", ["Crossings", "Intersect Fields"]), ("Time", ["Timeline", "Replay"]), ("Colour", ["Gradient"]),
+            ("Export", ["Houdini Export"])]]
 NOTE = {
     "Field": "Loads a movement field from your results: site, clip, people or vehicles - or just one moment of it.",
     "Transform Field": "Turns, scales, stretches and mirrors a field in its own plane, then moves it: stack fields as layers.",
@@ -34,6 +36,10 @@ NOTE = {
     "Loft Fields": "Joins stacked layers at their edges with rounded folds: one continuous landscape, the flow blending across.",
     "Bridge": "Swooping ribbons between fields - found where the flows leave and arrive, or along curves you draw.",
     "Field Surface": "A field's ground as a mesh coloured by speed, and its outlines as smooth curves.",
+    "Sculpt Field": "Terrain shaping: presses areas, curves or points of the ground down - or up - with a soft edge; the flow can run downhill into them.",
+    "Fuse Fields": "Fuses fields like blobs where their edges come close: only the near sides join, fuller the closer they are.",
+    "Connect Fields": "Joins stacked or neighbouring fields smoothly where you draw, continuing their own flow and look.",
+    "Houdini Export": "Sends fields to Houdini as a force field for POPs: a ready particle scene, the velocity volume (.vdb) and the cells (.geo).",
     "Force": "A constant push plus turbulence.",
     "Axis Force": "Swirls particles around an axis, sucks them in, lifts them.",
     "Attract": "Pulls particles to points - or pushes them away.",
@@ -102,7 +108,9 @@ def render(nodes, out, ink, faint):
         for label, names in col:
             if label:
                 d.text((x, y), label.upper(), font=F_HEAD, fill=faint)
-            d.line([(x, y + 26), (x + col_w, y + 26)], fill=faint, width=1)
+            # a panel continued from the column before: its rule runs on across the gap
+            x_from = x if label else x - COL_GAP
+            d.line([(x_from, y + 26), (x + col_w, y + 26)], fill=faint, width=1)
             y += HEAD
             for n in names:
                 node = nodes[n]
